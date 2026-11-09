@@ -1,10 +1,9 @@
 import { useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { countCardsByFolder, db, getFoldersForClass, type Folder } from './db.ts'
+import { db, getFoldersForClass, type Folder } from './db.ts'
 
 export function useIdParam(name: string): number {
-  const value = useParams()[name]
-  return Number(value)
+  return Number(useParams()[name])
 }
 
 // null while loading, undefined when the class doesn't exist.
@@ -14,18 +13,6 @@ export function useClass(classId: number) {
 
 export function useFolders(classId: number) {
   return useLiveQuery(() => getFoldersForClass(classId), [classId])
-}
-
-export function useCardCounts() {
-  return useLiveQuery(countCardsByFolder, [], new Map<number, number>())
-}
-
-export function useLessonFolderIds() {
-  return useLiveQuery(
-    async () => new Set((await db.lessons.toArray()).map((l) => l.folderId)),
-    [],
-    new Set<number>(),
-  )
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {

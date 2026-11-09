@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { db, saveReviewResult, type Flashcard } from '../db.ts'
-import { explainCard } from '../ai/actions.ts'
 
 interface Props {
   folderIds: number[]
@@ -22,12 +21,8 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
   const [cards, setCards] = useState<Flashcard[] | null>(null)
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
-  const [missedCurrent, setMissedCurrent] = useState(false)
   const [results, setResults] = useState<Map<number, boolean>>(new Map())
   const [finished, setFinished] = useState(false)
-  const [explaining, setExplaining] = useState(false)
-  const [explainError, setExplainError] = useState<string | null>(null)
-  const [showExplanation, setShowExplanation] = useState(false)
 
   const folderKey = folderIds.join(',')
 
@@ -50,11 +45,8 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
     setCards(shuffle(deck))
     setIndex(0)
     setRevealed(false)
-    setMissedCurrent(false)
     setResults(new Map())
     setFinished(false)
-    setShowExplanation(false)
-    setExplainError(null)
   }
 
   if (cards === null) return null
@@ -62,10 +54,11 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
   if (cards.length === 0) {
     return (
       <div className="empty-state">
-        <p>There are no flashcards in these folders yet.</p>
-        <p className="row-detail">
-          Open a folder in Course Content and tap “Make flashcards”.
-        </p>
+        <p className="empty-title">No flashcards yet</p>
+        <p className="row-detail">The folders you picked don’t have any flashcards.</p>
+        <button className="secondary block spaced" onClick={onDone}>
+          Back
+        </button>
       </div>
     )
   }
@@ -80,9 +73,7 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
             {correct}
             <span> / {cards.length}</span>
           </p>
-          <p className="row-detail">
-            {missed.length === 0 ? 'You got every card. Nice work!' : 'cards correct'}
-          </p>
+          <p className="row-detail">cards correct</p>
         </div>
 
         {missed.length > 0 && (
@@ -93,7 +84,6 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
                 <li key={c.id} className="missed-row">
                   <p className="missed-front">{c.front}</p>
                   <p className="missed-back">{c.back}</p>
-                  {c.explanation && <p className="explanation small">{c.explanation}</p>}
                 </li>
               ))}
             </ul>
@@ -103,7 +93,7 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
           </>
         )}
         <button
-          className={missed.length > 0 ? 'secondary block' : 'primary block spaced'}
+          className={missed.length > 0 ? 'secondary block spaced' : 'primary block spaced'}
           onClick={onDone}
         >
           Done
@@ -114,40 +104,14 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
 
   const card = cards[index]
 
-  const next = () => {
+  const answer = async (correct: boolean) => {
+    await saveReviewResult(card.id, correct)
+    setResults(new Map(results).set(card.id, correct))
     if (index + 1 >= cards.length) {
       setFinished(true)
     } else {
       setIndex(index + 1)
       setRevealed(false)
-      setMissedCurrent(false)
-      setShowExplanation(false)
-      setExplainError(null)
-    }
-  }
-
-  const answer = async (correct: boolean) => {
-    await saveReviewResult(card.id, correct)
-    setResults(new Map(results).set(card.id, correct))
-    if (correct) next()
-    else setMissedCurrent(true)
-  }
-
-  const explain = async () => {
-    setExplainError(null)
-    setShowExplanation(true)
-    if (card.explanation) return
-    setExplaining(true)
-    try {
-      const explanation = await explainCard(card.id)
-      setCards((prev) =>
-        prev ? prev.map((c) => (c.id === card.id ? { ...c, explanation } : c)) : prev,
-      )
-    } catch (e) {
-      setShowExplanation(false)
-      setExplainError(e instanceof Error ? e.message : 'Something went wrong. Try again.')
-    } finally {
-      setExplaining(false)
     }
   }
 
@@ -166,9 +130,8 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
         className={`flashcard ${revealed ? 'revealed' : ''}`}
         onClick={() => setRevealed(true)}
         disabled={revealed}
-        aria-label={revealed ? undefined : 'Show answer'}
       >
-        <span className="concept">{card.concept}</span>
+        {card.concept && <span className="concept">{card.concept}</span>}
         <span className="front">{card.front}</span>
         {revealed ? (
           <>
@@ -180,7 +143,7 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
         )}
       </button>
 
-      {revealed && !missedCurrent && (
+      {revealed && (
         <div className="answer-buttons">
           <button className="missed" onClick={() => answer(false)}>
             Missed it
@@ -188,27 +151,6 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
           <button className="got" onClick={() => answer(true)}>
             Got it
           </button>
-        </div>
-      )}
-
-      {missedCurrent && (
-        <div className="after-miss">
-          {showExplanation && (
-            <div className="explanation">
-              {explaining ? <p className="row-detail">Writing an explanation…</p> : card.explanation}
-            </div>
-          )}
-          {explainError && <p className="error">{explainError}</p>}
-          <div className="answer-buttons">
-            {!showExplanation && (
-              <button className="secondary" onClick={explain}>
-                Explain this
-              </button>
-            )}
-            <button className="primary" onClick={next} disabled={explaining}>
-              {index + 1 >= cards.length ? 'See results' : 'Next card'}
-            </button>
-          </div>
         </div>
       )}
     </div>

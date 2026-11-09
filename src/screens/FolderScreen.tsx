@@ -1,36 +1,23 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Header from '../components/Header.tsx'
 import FilePicker from '../components/FilePicker.tsx'
 import FileRow from '../components/FileRow.tsx'
 import { addFilesToFolder, db, deleteFile, deleteFolder } from '../db.ts'
-import { addMoreFlashcards, generateLesson, makeFlashcards } from '../ai/actions.ts'
-import { plural, useIdParam, folderTypeLabel } from '../hooks.ts'
+import { folderTypeLabel, useIdParam } from '../hooks.ts'
 
-type Busy = 'make' | 'more' | 'lesson' | null
-
+// A folder inside Course Content: its files, Upload files, and the study
+// tools that come in a later step.
 export default function FolderScreen() {
   const classId = useIdParam('classId')
   const folderId = useIdParam('folderId')
   const navigate = useNavigate()
   const folder = useLiveQuery(() => db.folders.get(folderId), [folderId], null)
   const files = useLiveQuery(() => db.files.where('folderId').equals(folderId).toArray(), [folderId])
-  const cardCount = useLiveQuery(
-    () => db.flashcards.where('folderId').equals(folderId).count(),
-    [folderId],
-    0,
-  )
-  const lesson = useLiveQuery(() => db.lessons.where('folderId').equals(folderId).first(), [folderId])
-  const [busy, setBusy] = useState<Busy>(null)
-  const [message, setMessage] = useState<{
-    kind: Exclude<Busy, null>
-    text: string
-    error: boolean
-  } | null>(null)
   const [editing, setEditing] = useState(false)
 
-  const back = { to: `/classes/${classId}/content`, label: 'Content' }
+  const back = { to: `/classes/${classId}/content`, label: 'Course Content' }
 
   if (folder === null) return null
   if (folder === undefined || folder.classId !== classId) {
@@ -42,46 +29,12 @@ export default function FolderScreen() {
     )
   }
 
-  const run = async (kind: Exclude<Busy, null>, action: () => Promise<string>) => {
-    setBusy(kind)
-    setMessage(null)
-    try {
-      setMessage({ kind, text: await action(), error: false })
-    } catch (e) {
-      setMessage({
-        kind,
-        text: e instanceof Error ? e.message : 'Something went wrong. Try again.',
-        error: true,
-      })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const make = () => {
-    if (cardCount > 0 && !window.confirm(`Replace the ${plural(cardCount, 'card')} in this deck?`)) {
-      return
-    }
-    run('make', async () => `Made ${plural(await makeFlashcards(folderId), 'flashcard')}.`)
-  }
-
-  const more = () =>
-    run('more', async () => `Added ${plural(await addMoreFlashcards(folderId), 'new card')}.`)
-
-  const makeLesson = () => {
-    if (lesson && !window.confirm('Replace this folder’s lesson with a new one?')) return
-    run('lesson', async () => {
-      await generateLesson(folderId)
-      return 'Lesson ready.'
-    })
-  }
-
   const removeFile = async (id: number, name: string) => {
     if (window.confirm(`Delete “${name}”?`)) await deleteFile(id)
   }
 
   const removeFolder = async () => {
-    if (window.confirm(`Delete “${folder.name}” with its files, flashcards and lesson?`)) {
+    if (window.confirm(`Delete “${folder.name}” and its files?`)) {
       await deleteFolder(folderId)
       navigate(back.to, { replace: true })
     }
@@ -101,7 +54,7 @@ export default function FolderScreen() {
       />
 
       <h2 className="section-header">Files</h2>
-      {files && files.length > 0 ? (
+      {files && files.length > 0 && (
         <ul className="list">
           {files.map((f) => (
             <li key={f.id}>
@@ -109,52 +62,28 @@ export default function FolderScreen() {
             </li>
           ))}
         </ul>
-      ) : (
-        files && <p className="hint-text">Upload slides, notes or readings for this {folderTypeLabel(folder).toLowerCase()}.</p>
+      )}
+      {files && files.length === 0 && (
+        <p className="hint-text">
+          Upload slides, notes or readings for this {folderTypeLabel(folder).toLowerCase()}.
+        </p>
       )}
       <FilePicker
         multiple
-        className="secondary block spaced"
+        className="primary block spaced"
         onFiles={(picked) => addFilesToFolder(classId, folderId, picked)}
       >
-        Upload
+        Upload files
       </FilePicker>
 
-      <h2 className="section-header">Flashcards</h2>
+      <h2 className="section-header">Study tools</h2>
       <div className="action-card">
-        <p className="row-detail">
-          {cardCount === 0 ? 'No deck yet.' : `Deck: ${plural(cardCount, 'card')}`}
-        </p>
-        <div className="action-buttons">
-          <button className="primary" onClick={make} disabled={busy !== null}>
-            {busy === 'make' ? 'Making…' : 'Make flashcards'}
+        {['Make flashcards', 'Add more flashcards', 'Generate lesson'].map((label) => (
+          <button key={label} className="secondary coming-soon" disabled>
+            <span>{label}</span>
+            <span className="soon-label">Coming soon</span>
           </button>
-          <button className="secondary" onClick={more} disabled={busy !== null || cardCount === 0}>
-            {busy === 'more' ? 'Adding…' : 'Add more flashcards'}
-          </button>
-        </div>
-        {cardCount > 0 && (
-          <Link className="text-link" to={`/classes/${classId}/review/session?folders=${folderId}`}>
-            Study this deck ›
-          </Link>
-        )}
-        {message && message.kind !== 'lesson' && <Status {...message} />}
-      </div>
-
-      <h2 className="section-header">Lesson</h2>
-      <div className="action-card">
-        <p className="row-detail">{lesson ? lesson.content.title : 'No lesson yet.'}</p>
-        <div className="action-buttons">
-          <button className="primary" onClick={makeLesson} disabled={busy !== null}>
-            {busy === 'lesson' ? 'Generating…' : 'Generate lesson'}
-          </button>
-        </div>
-        {lesson && (
-          <Link className="text-link" to={`/classes/${classId}/learn/${folderId}`}>
-            Open lesson ›
-          </Link>
-        )}
-        {message?.kind === 'lesson' && <Status {...message} />}
+        ))}
       </div>
 
       {editing && (
@@ -163,13 +92,5 @@ export default function FolderScreen() {
         </button>
       )}
     </>
-  )
-}
-
-function Status({ text, error }: { text: string; error: boolean }) {
-  return (
-    <p className={error ? 'error' : 'success'} role="status">
-      {text}
-    </p>
   )
 }

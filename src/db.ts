@@ -36,7 +36,7 @@ export interface Flashcard {
   front: string
   back: string
   concept: string
-  explanation: string | null // null until the user taps "Explain this"
+  explanation: string | null
   createdAt: number
 }
 
@@ -114,6 +114,16 @@ db.version(2)
     // Version 1 never had a way to create lessons or flashcards.
     await tx.table('lessons').clear()
     await tx.table('flashcards').clear()
+  })
+
+// Version 3: the flashcards, answers and lessons saved so far were all made
+// by stand-in sample data, not by the user, so they are removed.
+db.version(3)
+  .stores({})
+  .upgrade(async (tx) => {
+    await tx.table('flashcards').clear()
+    await tx.table('reviewResults').clear()
+    await tx.table('lessons').clear()
   })
 
 // ---------- Classes ----------
@@ -237,12 +247,6 @@ export async function deleteFile(fileId: number): Promise<void> {
 }
 
 // ---------- Flashcards ----------
-
-export async function countCardsByFolder(): Promise<Map<number, number>> {
-  const counts = new Map<number, number>()
-  await db.flashcards.each((c) => counts.set(c.folderId, (counts.get(c.folderId) ?? 0) + 1))
-  return counts
-}
 
 export async function saveReviewResult(flashcardId: number, correct: boolean): Promise<void> {
   await db.reviewResults.add({ flashcardId, correct, answeredAt: Date.now() })
