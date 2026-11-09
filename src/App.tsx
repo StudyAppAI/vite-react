@@ -1,35 +1,37 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect, useState } from 'react'
+import HomeScreen from './screens/HomeScreen.tsx'
+import ClassScreen from './screens/ClassScreen.tsx'
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <div>
-        <a href="https://vitejs.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+// The open class is kept in the URL hash (#/class/3) so a reload stays on it.
+function readClassId(): number | null {
+  const match = window.location.hash.match(/^#\/class\/(\d+)$/)
+  return match ? Number(match[1]) : null
 }
 
-export default App
+export default function App() {
+  const [classId, setClassId] = useState<number | null>(readClassId)
+
+  useEffect(() => {
+    const onHashChange = () => setClassId(readClassId())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const openClass = (id: number) => {
+    window.location.hash = `/class/${id}`
+  }
+
+  const goHome = () => {
+    if (window.history.length > 1 && readClassId() !== null) {
+      window.history.back()
+    } else {
+      window.location.hash = ''
+    }
+  }
+
+  return classId === null ? (
+    <HomeScreen onOpenClass={openClass} />
+  ) : (
+    <ClassScreen classId={classId} onBack={goHome} />
+  )
+}
