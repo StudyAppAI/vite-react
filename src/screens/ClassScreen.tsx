@@ -1,97 +1,85 @@
 import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import Dexie from 'dexie'
-import { addWeek, db, deleteClass, deleteWeek } from '../db.ts'
+import Header from '../components/Header.tsx'
+import { db, deleteClass } from '../db.ts'
+import { plural, useClass, useIdParam } from '../hooks.ts'
+import MissingClass from './MissingClass.tsx'
 
-interface Props {
-  classId: number
-  onBack: () => void
-}
-
-export default function ClassScreen({ classId, onBack }: Props) {
+export default function ClassScreen() {
+  const classId = useIdParam('classId')
+  const studyClass = useClass(classId)
+  const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
-  // null while loading, undefined when the class does not exist
-  const studyClass = useLiveQuery(() => db.classes.get(classId), [classId], null)
-  const weeks = useLiveQuery(
-    () =>
-      db.weeks
-        .where('[classId+number]')
-        .between([classId, Dexie.minKey], [classId, Dexie.maxKey])
-        .toArray(),
+  const counts = useLiveQuery(
+    async () => ({
+      folders: await db.folders.where('classId').equals(classId).count(),
+      cards: await db.flashcards.where('classId').equals(classId).count(),
+      lessons: await db.lessons.where('classId').equals(classId).count(),
+    }),
     [classId],
   )
 
-  const removeWeek = async (weekId: number, number: number) => {
-    if (window.confirm(`Delete Week ${number} and everything in it?`)) {
-      await deleteWeek(weekId)
-    }
-  }
+  if (studyClass === null) return null
+  if (studyClass === undefined) return <MissingClass />
 
-  const removeClass = async () => {
-    if (!studyClass) return
-    if (window.confirm(`Delete "${studyClass.name}" and all of its weeks?`)) {
+  const remove = async () => {
+    if (window.confirm(`Delete “${studyClass.name}” and everything in it?`)) {
       await deleteClass(classId)
-      onBack()
+      navigate('/classes', { replace: true })
     }
   }
-
-  if (studyClass === null) return <div className="screen" />
 
   return (
-    <div className="screen">
-      <nav className="nav-bar">
-        <button className="nav-button" onClick={onBack}>
-          <span className="back-chevron" aria-hidden="true">‹</span> Classes
-        </button>
-        {studyClass && (
+    <>
+      <Header
+        back={{ to: '/classes', label: 'Classes' }}
+        title={studyClass.name}
+        right={
           <button className="nav-button" onClick={() => setEditing(!editing)}>
             {editing ? 'Done' : 'Edit'}
           </button>
-        )}
-      </nav>
+        }
+      />
 
-      {studyClass === undefined ? (
-        <p className="empty">This class no longer exists.</p>
-      ) : (
-        <>
-          <header className="large-header">
-            <h1>{studyClass.name}</h1>
-          </header>
+      <ul className="list">
+        <li>
+          <Link className="row tall" to={`/classes/${classId}/content`}>
+            <span className="row-icon content" aria-hidden="true">📂</span>
+            <span className="row-text">
+              <span className="row-title">Course Content</span>
+              <span className="row-detail">Syllabus · {plural(counts?.folders ?? 0, 'folder')}</span>
+            </span>
+            <span className="chevron" aria-hidden="true">›</span>
+          </Link>
+        </li>
+        <li>
+          <Link className="row tall" to={`/classes/${classId}/review`}>
+            <span className="row-icon review" aria-hidden="true">🃏</span>
+            <span className="row-text">
+              <span className="row-title">Review</span>
+              <span className="row-detail">Flashcards · {plural(counts?.cards ?? 0, 'card')}</span>
+            </span>
+            <span className="chevron" aria-hidden="true">›</span>
+          </Link>
+        </li>
+        <li>
+          <Link className="row tall" to={`/classes/${classId}/learn`}>
+            <span className="row-icon learn" aria-hidden="true">💡</span>
+            <span className="row-text">
+              <span className="row-title">Learn</span>
+              <span className="row-detail">Visual content · {plural(counts?.lessons ?? 0, 'lesson')}</span>
+            </span>
+            <span className="chevron" aria-hidden="true">›</span>
+          </Link>
+        </li>
+      </ul>
 
-          <button className="primary block" onClick={() => addWeek(classId)}>
-            + Add Week
-          </button>
-
-          {weeks === undefined ? null : weeks.length === 0 ? (
-            <p className="empty">No weeks yet. Tap “Add Week” to create Week 1.</p>
-          ) : (
-            <ul className="list">
-              {weeks.map((w) => (
-                <li key={w.id}>
-                  <div className="row">
-                    <span className="week-badge">{w.number}</span>
-                    <span className="row-title">Week {w.number}</span>
-                    {editing && (
-                      <button
-                        className="delete-button"
-                        onClick={() => removeWeek(w.id, w.number)}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {editing && (
-            <button className="danger block" onClick={removeClass}>
-              Delete Class
-            </button>
-          )}
-        </>
+      {editing && (
+        <button className="danger block spaced" onClick={remove}>
+          Delete class
+        </button>
       )}
-    </div>
+    </>
   )
 }

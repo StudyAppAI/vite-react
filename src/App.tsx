@@ -1,37 +1,45 @@
-import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import Layout from './components/Layout.tsx'
 import HomeScreen from './screens/HomeScreen.tsx'
+import ClassesScreen from './screens/ClassesScreen.tsx'
 import ClassScreen from './screens/ClassScreen.tsx'
-
-// The open class is kept in the URL hash (#/class/3) so a reload stays on it.
-function readClassId(): number | null {
-  const match = window.location.hash.match(/^#\/class\/(\d+)$/)
-  return match ? Number(match[1]) : null
-}
+import ContentScreen from './screens/ContentScreen.tsx'
+import FolderScreen from './screens/FolderScreen.tsx'
+import ClassReviewScreen from './screens/ClassReviewScreen.tsx'
+import ReviewScreen from './screens/ReviewScreen.tsx'
+import SessionScreen from './screens/SessionScreen.tsx'
+import FolderLessonListScreen from './screens/FolderLessonListScreen.tsx'
+import LearnScreen from './screens/LearnScreen.tsx'
+import LessonScreen from './screens/LessonScreen.tsx'
+import AccountScreen from './screens/AccountScreen.tsx'
 
 export default function App() {
-  const [classId, setClassId] = useState<number | null>(readClassId)
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<HomeScreen />} />
 
-  useEffect(() => {
-    const onHashChange = () => setClassId(readClassId())
-    window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
-  }, [])
+          <Route path="classes" element={<ClassesScreen />} />
+          <Route path="classes/:classId" element={<ClassScreen />} />
+          <Route path="classes/:classId/content" element={<ContentScreen />} />
+          <Route path="classes/:classId/content/:folderId" element={<FolderScreen />} />
+          <Route path="classes/:classId/review" element={<ClassReviewScreen />} />
+          <Route path="classes/:classId/review/session" element={<SessionScreen />} />
+          <Route path="classes/:classId/learn" element={<FolderLessonListScreen from="class" />} />
+          <Route path="classes/:classId/learn/:folderId" element={<LessonScreen from="class" />} />
 
-  const openClass = (id: number) => {
-    window.location.hash = `/class/${id}`
-  }
+          <Route path="review" element={<ReviewScreen />} />
+          <Route path="review/session" element={<SessionScreen />} />
 
-  const goHome = () => {
-    if (window.history.length > 1 && readClassId() !== null) {
-      window.history.back()
-    } else {
-      window.location.hash = ''
-    }
-  }
+          <Route path="learn" element={<LearnScreen />} />
+          <Route path="learn/:classId" element={<FolderLessonListScreen from="learn" />} />
+          <Route path="learn/:classId/:folderId" element={<LessonScreen from="learn" />} />
 
-  return classId === null ? (
-    <HomeScreen onOpenClass={openClass} />
-  ) : (
-    <ClassScreen classId={classId} onBack={goHome} />
+          <Route path="account" element={<AccountScreen />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }

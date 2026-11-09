@@ -1,0 +1,43 @@
+import { useParams } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { countCardsByFolder, db, getFoldersForClass, type Folder } from './db.ts'
+
+export function useIdParam(name: string): number {
+  const value = useParams()[name]
+  return Number(value)
+}
+
+// null while loading, undefined when the class doesn't exist.
+export function useClass(classId: number) {
+  return useLiveQuery(() => db.classes.get(classId), [classId], null)
+}
+
+export function useFolders(classId: number) {
+  return useLiveQuery(() => getFoldersForClass(classId), [classId])
+}
+
+export function useCardCounts() {
+  return useLiveQuery(countCardsByFolder, [], new Map<number, number>())
+}
+
+export function useLessonFolderIds() {
+  return useLiveQuery(
+    async () => new Set((await db.lessons.toArray()).map((l) => l.folderId)),
+    [],
+    new Set<number>(),
+  )
+}
+
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export function folderTypeLabel(folder: Folder): string {
+  return folder.type === 'week' ? 'Week' : 'Topic'
+}

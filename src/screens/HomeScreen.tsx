@@ -1,69 +1,42 @@
-import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { addClass, db } from '../db.ts'
+import Header from '../components/Header.tsx'
+import { db } from '../db.ts'
+import { plural } from '../hooks.ts'
 
-interface Props {
-  onOpenClass: (id: number) => void
-}
-
-export default function HomeScreen({ onOpenClass }: Props) {
-  const [name, setName] = useState('')
-  const classes = useLiveQuery(() => db.classes.orderBy('createdAt').toArray())
-  const weekCounts = useLiveQuery(async () => {
-    const counts = new Map<number, number>()
-    await db.weeks.each((w) => counts.set(w.classId, (counts.get(w.classId) ?? 0) + 1))
-    return counts
-  })
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    const trimmed = name.trim()
-    if (!trimmed) return
-    setName('')
-    await addClass(trimmed)
-  }
+export default function HomeScreen() {
+  const counts = useLiveQuery(async () => ({
+    classes: await db.classes.count(),
+    cards: await db.flashcards.count(),
+    lessons: await db.lessons.count(),
+  }))
 
   return (
-    <div className="screen">
-      <header className="large-header">
-        <h1>Classes</h1>
-      </header>
-
-      <form className="add-form" onSubmit={submit}>
-        <input
-          type="text"
-          placeholder="New class name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          enterKeyHint="done"
-          autoComplete="off"
-          aria-label="New class name"
-        />
-        <button type="submit" className="primary" disabled={!name.trim()}>
-          Add
-        </button>
-      </form>
-
-      {classes === undefined ? null : classes.length === 0 ? (
-        <p className="empty">No classes yet. Add your first class above.</p>
-      ) : (
-        <ul className="list">
-          {classes.map((c) => {
-            const count = weekCounts?.get(c.id) ?? 0
-            return (
-              <li key={c.id}>
-                <button className="row" onClick={() => onOpenClass(c.id)}>
-                  <span className="row-title">{c.name}</span>
-                  <span className="row-detail">
-                    {count} {count === 1 ? 'week' : 'weeks'}
-                  </span>
-                  <span className="chevron" aria-hidden="true">›</span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
+    <>
+      <Header title="Study App" subtitle="Your classes, flashcards and lessons, on this device." />
+      <ul className="list">
+        <li>
+          <Link className="row" to="/classes">
+            <span className="row-title">Classes</span>
+            <span className="row-detail">{counts ? plural(counts.classes, 'class', 'classes') : ''}</span>
+            <span className="chevron" aria-hidden="true">›</span>
+          </Link>
+        </li>
+        <li>
+          <Link className="row" to="/review">
+            <span className="row-title">Review flashcards</span>
+            <span className="row-detail">{counts ? plural(counts.cards, 'card') : ''}</span>
+            <span className="chevron" aria-hidden="true">›</span>
+          </Link>
+        </li>
+        <li>
+          <Link className="row" to="/learn">
+            <span className="row-title">Learn</span>
+            <span className="row-detail">{counts ? plural(counts.lessons, 'lesson') : ''}</span>
+            <span className="chevron" aria-hidden="true">›</span>
+          </Link>
+        </li>
+      </ul>
+    </>
   )
 }
