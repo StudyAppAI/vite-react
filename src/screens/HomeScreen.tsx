@@ -1,15 +1,15 @@
-import { Link } from 'react-router-dom'
 import Header from '../components/Header.tsx'
+import ComingSoonButton from '../components/ComingSoonButton.tsx'
+import { useAuth } from '../auth.ts'
 
 export default function HomeScreen() {
+  const { name } = useAuth()
   return (
     <>
-      <Header title="Welcome" subtitle="Study App keeps your classes and course files on this device." />
-      <div className="welcome-card">
-        <p>Start by adding a class, then upload its syllabus and add a folder for each week or topic.</p>
-        <Link className="primary block link-button" to="/classes">
-          Go to Classes
-        </Link>
+      <Header title={`Welcome, ${name}`} subtitle="Your classes, flashcards and lessons, on this device." />
+      <div className="button-stack">
+        <ComingSoonButton label="Continue where you left off" className="block" />
+        <ComingSoonButton label="Cards due for review" className="block" />
       </div>
     </>
   )

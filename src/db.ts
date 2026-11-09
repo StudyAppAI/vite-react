@@ -17,15 +17,23 @@ export interface Folder {
   createdAt: number
 }
 
+// What a content item is: an uploaded PDF, an uploaded PowerPoint, pasted
+// text, or (from older versions) some other uploaded file.
+export type ContentKind = 'pdf' | 'pptx' | 'text' | 'other'
+
+// A content item in a folder, or a class's syllabus (folderId null).
 export interface StoredFile {
   id: number
   classId: number
-  folderId: number | null // null for the syllabus
+  folderId: number | null
   isSyllabus: boolean
+  kind: ContentKind
   name: string
   mimeType: string
-  blob: Blob
-  extractedText: string | null // filled in once text extraction exists
+  blob: Blob | null // null for pasted text
+  extractedText: string | null // null while the text is still being read
+  extractionError: string | null
+  partCount: number | null // pages in a PDF, slides in a PowerPoint
   createdAt: number
 }
 
@@ -47,14 +55,9 @@ export interface ReviewResult {
   answeredAt: number
 }
 
-export interface LessonConcept {
-  heading: string
-  paragraph: string
-}
-
 export interface LessonSection {
-  title: string
-  concepts: LessonConcept[]
+  heading: string
+  paragraphs: string[]
 }
 
 export interface LessonContent {
@@ -126,10 +129,35 @@ db.version(3)
     await tx.table('lessons').clear()
   })
 
+// Version 4: content items get a kind, an extraction error and a part count.
+export function kindOf(name: string, mimeType: string): ContentKind {
+  const lower = name.toLowerCase()
+  if (mimeType === 'application/pdf' || lower.endsWith('.pdf')) return 'pdf'
+  if (lower.endsWith('.pptx')) return 'pptx'
+  return 'other'
+}
+
+db.version(4)
+  .stores({})
+  .upgrade(async (tx) => {
+    await tx
+      .table('files')
+      .toCollection()
+      .modify((f) => {
+        f.kind = kindOf(f.name, f.mimeType)
+        f.extractionError = null
+        f.partCount = null
+      })
+  })
+
 // ---------- Classes ----------
 
 export async function addClass(name: string): Promise<number> {
   return db.classes.add({ name, createdAt: Date.now() })
+}
+
+export async function renameClass(classId: number, name: string): Promise<void> {
+  await db.classes.update(classId, { name })
 }
 
 export async function deleteClass(classId: number): Promise<void> {
@@ -181,6 +209,10 @@ export async function addFolder(classId: number, type: FolderType, name: string)
   })
 }
 
+export async function renameFolder(folderId: number, name: string): Promise<void> {
+  await db.folders.update(folderId, { name })
+}
+
 export async function deleteFolder(folderId: number): Promise<void> {
   await db.transaction(
     'rw',
@@ -199,27 +231,47 @@ export async function deleteFolder(folderId: number): Promise<void> {
   )
 }
 
-// ---------- Files ----------
+// ---------- Content items ----------
 
-function toStoredFile(classId: number, folderId: number | null, file: File) {
+function uploadedItem(classId: number, folderId: number | null, file: File) {
+  const mimeType = file.type || 'application/octet-stream'
   return {
     classId,
     folderId,
     isSyllabus: folderId === null,
+    kind: kindOf(file.name, mimeType),
     name: file.name,
-    mimeType: file.type || 'application/octet-stream',
+    mimeType,
     blob: file,
     extractedText: null,
+    extractionError: null,
+    partCount: null,
     createdAt: Date.now(),
   }
 }
 
-export async function addFilesToFolder(
-  classId: number,
-  folderId: number,
-  files: File[],
-): Promise<void> {
-  await db.files.bulkAdd(files.map((f) => toStoredFile(classId, folderId, f)))
+function pastedItem(classId: number, folderId: number | null, name: string, text: string) {
+  return {
+    classId,
+    folderId,
+    isSyllabus: folderId === null,
+    kind: 'text' as const,
+    name,
+    mimeType: 'text/plain',
+    blob: null,
+    extractedText: text,
+    extractionError: null,
+    partCount: null,
+    createdAt: Date.now(),
+  }
+}
+
+export async function addFilesToFolder(classId: number, folderId: number, files: File[]) {
+  await db.files.bulkAdd(files.map((f) => uploadedItem(classId, folderId, f)))
+}
+
+export async function addTextToFolder(classId: number, folderId: number, name: string, text: string) {
+  await db.files.add(pastedItem(classId, folderId, name, text))
 }
 
 export async function getSyllabus(classId: number): Promise<StoredFile | undefined> {
@@ -230,16 +282,24 @@ export async function getSyllabus(classId: number): Promise<StoredFile | undefin
     .first()
 }
 
-// A class has one syllabus, so uploading a new one replaces the old one.
-export async function setSyllabus(classId: number, file: File): Promise<void> {
+// A class has one syllabus, so a new one replaces the old one.
+async function replaceSyllabus(item: Omit<StoredFile, 'id'>) {
   await db.transaction('rw', db.files, async () => {
     await db.files
       .where('classId')
-      .equals(classId)
+      .equals(item.classId)
       .filter((f) => f.isSyllabus)
       .delete()
-    await db.files.add(toStoredFile(classId, null, file))
+    await db.files.add(item)
   })
+}
+
+export async function setSyllabusFile(classId: number, file: File): Promise<void> {
+  await replaceSyllabus(uploadedItem(classId, null, file))
+}
+
+export async function setSyllabusText(classId: number, name: string, text: string) {
+  await replaceSyllabus(pastedItem(classId, null, name, text))
 }
 
 export async function deleteFile(fileId: number): Promise<void> {

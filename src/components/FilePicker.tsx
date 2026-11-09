@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 
 const ACCEPT =
-  '.pdf,.ppt,.pptx,.key,.doc,.docx,.pages,.txt,.md,.rtf,image/*,application/pdf'
+  '.pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation'
 
 interface Props {
   multiple?: boolean
@@ -10,7 +10,7 @@ interface Props {
   children: ReactNode
 }
 
-// A button that opens the iPhone file / photo picker.
+// A button that opens the iPhone file picker for PDFs and PowerPoints.
 export default function FilePicker({ multiple = false, onFiles, className, children }: Props) {
   const input = useRef<HTMLInputElement>(null)
   return (

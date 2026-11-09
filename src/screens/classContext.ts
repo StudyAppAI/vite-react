@@ -3,10 +3,9 @@ import type { StudyClass } from '../db.ts'
 
 export interface ClassContext {
   studyClass: StudyClass
-  editing: boolean
 }
 
-// Lets the class page's tabs read the class and whether Edit is on.
+// Lets the class page's tabs read the class.
 export function useClassContext() {
   return useOutletContext<ClassContext>()
 }

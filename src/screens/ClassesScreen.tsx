@@ -1,60 +1,77 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Header from '../components/Header.tsx'
-import { addClass, db } from '../db.ts'
+import NameSheet from '../components/NameSheet.tsx'
+import { addClass, db, deleteClass, renameClass, type StudyClass } from '../db.ts'
 import { plural } from '../hooks.ts'
 
 export default function ClassesScreen() {
-  const [name, setName] = useState('')
   const classes = useLiveQuery(() => db.classes.orderBy('createdAt').toArray())
   const folderCounts = useLiveQuery(async () => {
     const counts = new Map<number, number>()
     await db.folders.each((f) => counts.set(f.classId, (counts.get(f.classId) ?? 0) + 1))
     return counts
   })
+  const [adding, setAdding] = useState(false)
+  const [renaming, setRenaming] = useState<StudyClass | null>(null)
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    const trimmed = name.trim()
-    if (!trimmed) return
-    setName('')
-    await addClass(trimmed)
+  const remove = async (c: StudyClass) => {
+    if (window.confirm(`Delete “${c.name}”? Its folders, content, flashcards and lessons will be deleted too.`)) {
+      await deleteClass(c.id)
+    }
   }
 
   return (
     <>
       <Header title="Classes" />
-
-      <form className="add-form" onSubmit={submit}>
-        <input
-          type="text"
-          placeholder="New class name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          enterKeyHint="done"
-          autoComplete="off"
-          aria-label="New class name"
-        />
-        <button type="submit" className="primary" disabled={!name.trim()}>
-          Add class
-        </button>
-      </form>
+      <button className="primary block" onClick={() => setAdding(true)}>
+        + Add class
+      </button>
 
       {classes === undefined ? null : classes.length === 0 ? (
-        <p className="empty">No classes yet. Add your first class above.</p>
+        <p className="empty">No classes yet. Tap “+ Add class” to add your first one.</p>
       ) : (
-        <ul className="list">
+        <ul className="list spaced-list">
           {classes.map((c) => (
-            <li key={c.id}>
+            <li key={c.id} className="managed-item">
               <Link className="row" to={`/classes/${c.id}`}>
-                <span className="row-title">{c.name}</span>
+                <span className="row-title strong">{c.name}</span>
                 <span className="row-detail">{plural(folderCounts?.get(c.id) ?? 0, 'folder')}</span>
                 <span className="chevron" aria-hidden="true">›</span>
               </Link>
+              <div className="item-actions">
+                <button onClick={() => setRenaming(c)}>Rename class</button>
+                <button className="danger-text" onClick={() => remove(c)}>
+                  Delete class
+                </button>
+              </div>
             </li>
           ))}
         </ul>
+      )}
+
+      {adding && (
+        <NameSheet
+          title="New class"
+          label="Class name"
+          placeholder="e.g. CS 101"
+          submitLabel="Add class"
+          onSubmit={async (name) => {
+            await addClass(name)
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
+      {renaming && (
+        <NameSheet
+          title="Rename class"
+          label="Class name"
+          initial={renaming.name}
+          submitLabel="Save class name"
+          onSubmit={(name) => renameClass(renaming.id, name)}
+          onClose={() => setRenaming(null)}
+        />
       )}
     </>
   )

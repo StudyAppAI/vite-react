@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, saveReviewResult, type Flashcard } from '../db.ts'
+import ComingSoonButton from './ComingSoonButton.tsx'
 
 interface Props {
   folderIds: number[]
@@ -21,6 +22,7 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
   const [cards, setCards] = useState<Flashcard[] | null>(null)
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
+  const [missedCurrent, setMissedCurrent] = useState(false)
   const [results, setResults] = useState<Map<number, boolean>>(new Map())
   const [finished, setFinished] = useState(false)
 
@@ -45,6 +47,7 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
     setCards(shuffle(deck))
     setIndex(0)
     setRevealed(false)
+    setMissedCurrent(false)
     setResults(new Map())
     setFinished(false)
   }
@@ -57,7 +60,7 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
         <p className="empty-title">No flashcards yet</p>
         <p className="row-detail">The folders you picked don’t have any flashcards.</p>
         <button className="secondary block spaced" onClick={onDone}>
-          Back
+          Done
         </button>
       </div>
     )
@@ -104,15 +107,21 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
 
   const card = cards[index]
 
-  const answer = async (correct: boolean) => {
-    await saveReviewResult(card.id, correct)
-    setResults(new Map(results).set(card.id, correct))
+  const next = () => {
     if (index + 1 >= cards.length) {
       setFinished(true)
     } else {
       setIndex(index + 1)
       setRevealed(false)
+      setMissedCurrent(false)
     }
+  }
+
+  const answer = async (correct: boolean) => {
+    await saveReviewResult(card.id, correct)
+    setResults(new Map(results).set(card.id, correct))
+    if (correct) next()
+    else setMissedCurrent(true)
   }
 
   return (
@@ -130,26 +139,40 @@ export default function FlashcardSession({ folderIds, onDone }: Props) {
         className={`flashcard ${revealed ? 'revealed' : ''}`}
         onClick={() => setRevealed(true)}
         disabled={revealed}
+        aria-label={revealed ? undefined : 'Show answer'}
       >
         {card.concept && <span className="concept">{card.concept}</span>}
         <span className="front">{card.front}</span>
-        {revealed ? (
+        {revealed && (
           <>
             <span className="divider" />
             <span className="back">{card.back}</span>
           </>
-        ) : (
-          <span className="hint">Tap to show answer</span>
         )}
       </button>
 
-      {revealed && (
+      {!revealed && (
+        <button className="primary block" onClick={() => setRevealed(true)}>
+          Show answer
+        </button>
+      )}
+
+      {revealed && !missedCurrent && (
         <div className="answer-buttons">
           <button className="missed" onClick={() => answer(false)}>
             Missed it
           </button>
           <button className="got" onClick={() => answer(true)}>
             Got it
+          </button>
+        </div>
+      )}
+
+      {missedCurrent && (
+        <div className="after-miss">
+          <ComingSoonButton label="Explain this answer" className="block" />
+          <button className="primary block" onClick={next}>
+            {index + 1 >= cards.length ? 'See my score' : 'Next card'}
           </button>
         </div>
       )}

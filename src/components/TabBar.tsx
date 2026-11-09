@@ -4,7 +4,7 @@ import { AccountIcon, ClassesIcon, HomeIcon, LearnIcon, ReviewIcon } from './ico
 const tabs = [
   { to: '/', label: 'Home', Icon: HomeIcon, end: true },
   { to: '/classes', label: 'Classes', Icon: ClassesIcon, end: false },
-  { to: '/review', label: 'Review', Icon: ReviewIcon, end: false },
+  { to: '/flashcards', label: 'Flashcards', Icon: ReviewIcon, end: false },
   { to: '/learn', label: 'Learn', Icon: LearnIcon, end: false },
   { to: '/account', label: 'Account', Icon: AccountIcon, end: false },
 ]

@@ -31,8 +31,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,ico,webmanifest}'],
+        // The PDF reader is large; it is cached so uploads can be read offline.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],

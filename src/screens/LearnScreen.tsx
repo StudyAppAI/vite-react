@@ -9,7 +9,7 @@ export default function LearnScreen() {
 
   return (
     <>
-      <Header title="Learn" subtitle="Lessons for each week or topic." />
+      <Header title="Learn" subtitle="Interactive lessons for each week or topic." />
       {classes === undefined ? null : classes.length === 0 ? (
         <p className="empty">Add a class first.</p>
       ) : (

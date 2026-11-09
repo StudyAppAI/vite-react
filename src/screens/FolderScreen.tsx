@@ -1,21 +1,28 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Header from '../components/Header.tsx'
 import FilePicker from '../components/FilePicker.tsx'
-import FileRow from '../components/FileRow.tsx'
-import { addFilesToFolder, db, deleteFile, deleteFolder } from '../db.ts'
-import { folderTypeLabel, useIdParam } from '../hooks.ts'
+import PasteTextSheet from '../components/PasteTextSheet.tsx'
+import ContentItemRow from '../components/ContentItemRow.tsx'
+import GenerateButton from '../components/GenerateButton.tsx'
+import { addFilesToFolder, addTextToFolder, db, deleteFile, type StoredFile } from '../db.ts'
+import { readPendingFiles } from '../extract.ts'
+import { folderTypeLabel, plural, useIdParam } from '../hooks.ts'
 
-// A folder inside Course Content: its files, Upload files, and the study
-// tools that come in a later step.
+// A folder inside Course Content: its content items, ways to add content,
+// and the two generate buttons.
 export default function FolderScreen() {
   const classId = useIdParam('classId')
   const folderId = useIdParam('folderId')
-  const navigate = useNavigate()
   const folder = useLiveQuery(() => db.folders.get(folderId), [folderId], null)
-  const files = useLiveQuery(() => db.files.where('folderId').equals(folderId).toArray(), [folderId])
-  const [editing, setEditing] = useState(false)
+  const items = useLiveQuery(() => db.files.where('folderId').equals(folderId).sortBy('createdAt'), [folderId])
+  const cardCount = useLiveQuery(() => db.flashcards.where('folderId').equals(folderId).count(), [folderId], 0)
+  const hasLesson = useLiveQuery(
+    async () => (await db.lessons.where('folderId').equals(folderId).count()) > 0,
+    [folderId],
+    false,
+  )
+  const [pasting, setPasting] = useState(false)
 
   const back = { to: `/classes/${classId}/content`, label: 'Course Content' }
 
@@ -29,67 +36,58 @@ export default function FolderScreen() {
     )
   }
 
-  const removeFile = async (id: number, name: string) => {
-    if (window.confirm(`Delete “${name}”?`)) await deleteFile(id)
+  const upload = async (files: File[]) => {
+    await addFilesToFolder(classId, folderId, files)
+    readPendingFiles()
   }
 
-  const removeFolder = async () => {
-    if (window.confirm(`Delete “${folder.name}” and its files?`)) {
-      await deleteFolder(folderId)
-      navigate(back.to, { replace: true })
-    }
+  const remove = async (item: StoredFile) => {
+    if (window.confirm(`Delete “${item.name}”?`)) await deleteFile(item.id)
   }
 
   return (
     <>
-      <Header
-        back={back}
-        title={folder.name}
-        subtitle={folderTypeLabel(folder)}
-        right={
-          <button className="nav-button" onClick={() => setEditing(!editing)}>
-            {editing ? 'Done' : 'Edit'}
-          </button>
-        }
-      />
+      <Header back={back} title={folder.name} subtitle={`${folderTypeLabel(folder)} folder`} />
 
-      <h2 className="section-header">Files</h2>
-      {files && files.length > 0 && (
+      <h2 className="section-header">Content</h2>
+      {items && items.length > 0 ? (
         <ul className="list">
-          {files.map((f) => (
-            <li key={f.id}>
-              <FileRow file={f} onDelete={editing ? () => removeFile(f.id, f.name) : undefined} />
+          {items.map((item) => (
+            <li key={item.id}>
+              <ContentItemRow item={item} onDelete={() => remove(item)} />
             </li>
           ))}
         </ul>
+      ) : (
+        items && <p className="hint-text">Add slides, notes or readings for this folder.</p>
       )}
-      {files && files.length === 0 && (
-        <p className="hint-text">
-          Upload slides, notes or readings for this {folderTypeLabel(folder).toLowerCase()}.
-        </p>
-      )}
-      <FilePicker
-        multiple
-        className="primary block spaced"
-        onFiles={(picked) => addFilesToFolder(classId, folderId, picked)}
-      >
-        Upload files
-      </FilePicker>
-
-      <h2 className="section-header">Study tools</h2>
-      <div className="action-card">
-        {['Make flashcards', 'Add more flashcards', 'Generate lesson'].map((label) => (
-          <button key={label} className="secondary coming-soon" disabled>
-            <span>{label}</span>
-            <span className="soon-label">Coming soon</span>
-          </button>
-        ))}
+      <div className="button-row spaced">
+        <FilePicker multiple className="primary" onFiles={upload}>
+          Upload PDF or PowerPoint
+        </FilePicker>
+        <button className="secondary" onClick={() => setPasting(true)}>
+          Paste text
+        </button>
       </div>
 
-      {editing && (
-        <button className="danger block spaced" onClick={removeFolder}>
-          Delete folder
-        </button>
+      <h2 className="section-header">Flashcards</h2>
+      <div className="action-card">
+        <p className="row-detail">{cardCount === 0 ? 'No flashcards yet.' : `Deck: ${plural(cardCount, 'flashcard')}`}</p>
+        <GenerateButton folderId={folderId} kind="flashcards" />
+      </div>
+
+      <h2 className="section-header">Lesson</h2>
+      <div className="action-card">
+        <p className="row-detail">{hasLesson ? 'Lesson ready.' : 'No lesson yet.'}</p>
+        <GenerateButton folderId={folderId} kind="lesson" />
+      </div>
+
+      {pasting && (
+        <PasteTextSheet
+          title="Paste text"
+          onSave={(name, text) => addTextToFolder(classId, folderId, name, text)}
+          onClose={() => setPasting(false)}
+        />
       )}
     </>
   )
