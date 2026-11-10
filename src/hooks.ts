@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, getFoldersForClass, type Folder } from './db.ts'
+import { db, getClassesInOrder, getFoldersForClass, type Folder } from './db.ts'
 
 export function useIdParam(name: string): number {
   return Number(useParams()[name])
@@ -27,4 +27,8 @@ export function formatSize(bytes: number): string {
 
 export function folderTypeLabel(folder: Folder): string {
   return folder.type === 'week' ? 'Week' : 'Topic'
+}
+
+export function useClassesInOrder() {
+  return useLiveQuery(getClassesInOrder)
 }

@@ -63,7 +63,7 @@ export default function FolderScreen() {
       )}
       <div className="button-row spaced">
         <FilePicker multiple className="primary" onFiles={upload}>
-          Upload PDF or PowerPoint
+          Upload files (PDF, Word, slides)
         </FilePicker>
         <button className="secondary" onClick={() => setPasting(true)}>
           Paste text

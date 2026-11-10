@@ -9,12 +9,13 @@ interface Props {
 const badge: Record<StoredFile['kind'], string> = {
   pdf: 'PDF',
   pptx: 'PPTX',
+  docx: 'WORD',
   text: 'TEXT',
   other: 'FILE',
 }
 
 function details(item: StoredFile): string {
-  if (item.kind === 'text') {
+  if (item.kind === 'text' && !item.blob) {
     const words = item.extractedText?.split(/\s+/).filter(Boolean).length ?? 0
     return `Pasted text · ${plural(words, 'word')}`
   }
@@ -22,6 +23,7 @@ function details(item: StoredFile): string {
   if (item.extractedText === null) return `${size} · Reading text…`
   if (item.kind === 'pdf' && item.partCount) return `${size} · ${plural(item.partCount, 'page')}`
   if (item.kind === 'pptx' && item.partCount) return `${size} · ${plural(item.partCount, 'slide')}`
+  if (item.kind === 'docx' && item.partCount) return `${size} · ${plural(item.partCount, 'paragraph')}`
   return size
 }
 

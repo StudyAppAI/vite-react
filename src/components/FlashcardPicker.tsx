@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, type Folder, type StudyClass } from '../db.ts'
+import { db, getClassesInOrder, type Folder, type StudyClass } from '../db.ts'
 import { plural } from '../hooks.ts'
 import FolderBadge from './FolderBadge.tsx'
 import GenerateButton from './GenerateButton.tsx'
 import ComingSoonButton from './ComingSoonButton.tsx'
+import BulkGenerateButton from './BulkGenerateButton.tsx'
+import LearnTopicButton from './LearnTopicButton.tsx'
 
 interface Props {
   // Set on the class page's Flashcards tab: only this class, no class picker.
@@ -18,6 +20,7 @@ interface Data {
   classes: StudyClass[]
   byClass: Map<number, Folder[]>
   cardCounts: Map<number, number>
+  withText: Set<number> // folders that have content with readable text
 }
 
 // The one Flashcards picker: (classes →) folders with Select all and
@@ -27,7 +30,7 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
   const data = useLiveQuery(async (): Promise<Data> => {
     let classes: StudyClass[]
     if (classId === undefined) {
-      classes = await db.classes.orderBy('createdAt').toArray()
+      classes = await getClassesInOrder()
     } else {
       const one = await db.classes.get(classId)
       classes = one ? [one] : []
@@ -37,19 +40,30 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
     for (const f of folders) byClass.set(f.classId, [...(byClass.get(f.classId) ?? []), f])
     const cardCounts = new Map<number, number>()
     await db.flashcards.each((c) => cardCounts.set(c.folderId, (cardCounts.get(c.folderId) ?? 0) + 1))
-    return { classes, byClass, cardCounts }
+    const withText = new Set<number>()
+    await db.files.each((f) => {
+      if (f.folderId !== null && f.extractedText) withText.add(f.folderId)
+    })
+    return { classes, byClass, cardCounts, withText }
   }, [classId])
   const [pickedClasses, setPickedClasses] = useState<Set<number>>(new Set())
   const [pickedFolders, setPickedFolders] = useState<Set<number>>(new Set())
 
   if (!data) return null
-  const { classes, byClass, cardCounts } = data
+  const { classes, byClass, cardCounts, withText } = data
   const foldersOf = (id: number) => byClass.get(id) ?? []
 
   const shownClasses = classId === undefined ? classes.filter((c) => pickedClasses.has(c.id)) : classes
   const shownFolders = shownClasses.flatMap((c) => foldersOf(c.id))
   const chosen = shownFolders.filter((f) => pickedFolders.has(f.id))
   const cardTotal = chosen.reduce((sum, f) => sum + (cardCounts.get(f.id) ?? 0), 0)
+
+  // "Generate flashcards for N folders": the ticked folders, or every folder
+  // in the chosen classes when none are ticked. Only folders with content
+  // and no cards yet.
+  const scope = chosen.length > 0 ? chosen : shownFolders
+  const scopeWithText = scope.filter((f) => withText.has(f.id))
+  const needCards = scopeWithText.filter((f) => (cardCounts.get(f.id) ?? 0) === 0)
 
   const toggleFolder = (id: number) => {
     const next = new Set(pickedFolders)
@@ -151,6 +165,26 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
           </div>
         )
       })}
+
+      {scope.length > 0 && (
+        <div className="bulk-box">
+          {scopeWithText.length === 0 ? (
+            <>
+              <p className="notice-text">
+                There’s no content in {chosen.length > 0 ? 'the selected folders' : 'these folders'} to generate
+                flashcards from. Add files or text in Course Content, or learn a new topic instead.
+              </p>
+              <LearnTopicButton />
+            </>
+          ) : (
+            <BulkGenerateButton
+              kind="flashcards"
+              folderIds={needCards.map((f) => f.id)}
+              allDoneText={`Every ${chosen.length > 0 ? 'selected ' : ''}folder with content has flashcards.`}
+            />
+          )}
+        </div>
+      )}
 
       <div className="sticky-action">
         <button

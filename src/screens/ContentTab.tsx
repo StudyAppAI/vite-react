@@ -13,12 +13,12 @@ import {
   deleteFile,
   deleteFolder,
   getSyllabus,
+  moveFolder,
   nextWeekNumber,
   renameFolder,
   setSyllabusFile,
   setSyllabusText,
   type Folder,
-  type FolderType,
 } from '../db.ts'
 import { readPendingFiles } from '../extract.ts'
 import { folderTypeLabel, plural, useFolders } from '../hooks.ts'
@@ -42,8 +42,9 @@ export default function ContentTab() {
     new Map<number, number>(),
   )
   const [syllabusSheet, setSyllabusSheet] = useState<'choose' | 'paste' | null>(null)
-  const [adding, setAdding] = useState<{ type: FolderType; suggested: string } | null>(null)
+  const [adding, setAdding] = useState<{ weekSuggestion: string } | null>(null)
   const [renaming, setRenaming] = useState<Folder | null>(null)
+  const [reordering, setReordering] = useState(false)
 
   const uploadSyllabus = async (file: File) => {
     setSyllabusSheet(null)
@@ -51,8 +52,8 @@ export default function ContentTab() {
     readPendingFiles()
   }
 
-  const startAdding = async (type: FolderType) => {
-    setAdding({ type, suggested: type === 'week' ? `Week ${await nextWeekNumber(classId)}` : '' })
+  const startAdding = async () => {
+    setAdding({ weekSuggestion: `Week ${await nextWeekNumber(classId)}` })
   }
 
   const removeFolder = async (f: Folder) => {
@@ -89,9 +90,16 @@ export default function ContentTab() {
       {folders && folders.length === 0 && (
         <p className="hint-text">Add a folder for each week or topic of the class.</p>
       )}
+      {folders && folders.length > 1 && (
+        <div className="toolbar-row">
+          <button className="text-action" onClick={() => setReordering(!reordering)}>
+            {reordering ? 'Done reordering' : 'Reorder folders'}
+          </button>
+        </div>
+      )}
       {folders && folders.length > 0 && (
         <ul className="list">
-          {folders.map((f) => (
+          {folders.map((f, i) => (
             <li key={f.id} className="managed-item">
               <Link className="row" to={`/classes/${classId}/content/${f.id}`}>
                 <FolderBadge folder={f} />
@@ -103,30 +111,36 @@ export default function ContentTab() {
                 </span>
                 <span className="chevron" aria-hidden="true">›</span>
               </Link>
-              <div className="item-actions">
-                <button onClick={() => setRenaming(f)}>Rename folder</button>
-                <button className="danger-text" onClick={() => removeFolder(f)}>
-                  Delete folder
-                </button>
-              </div>
+              {reordering ? (
+                <div className="item-actions">
+                  <button onClick={() => moveFolder(f.id, -1)} disabled={i === 0}>
+                    Move up
+                  </button>
+                  <button onClick={() => moveFolder(f.id, 1)} disabled={i === folders.length - 1}>
+                    Move down
+                  </button>
+                </div>
+              ) : (
+                <div className="item-actions">
+                  <button onClick={() => setRenaming(f)}>Rename folder</button>
+                  <button className="danger-text" onClick={() => removeFolder(f)}>
+                    Delete folder
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
-      <div className="button-row spaced">
-        <button className="primary" onClick={() => startAdding('week')}>
-          + Add week folder
-        </button>
-        <button className="primary topic" onClick={() => startAdding('topic')}>
-          + Add topic folder
-        </button>
-      </div>
+      <button className="primary block spaced" onClick={startAdding}>
+        + Add folder
+      </button>
 
       {syllabusSheet === 'choose' && (
         <Sheet title={syllabus ? 'Replace syllabus' : 'Upload syllabus'} onClose={() => setSyllabusSheet(null)}>
           <div className="sheet-body">
             <FilePicker className="primary block" onFiles={([f]) => uploadSyllabus(f)}>
-              Upload PDF or PowerPoint
+              Upload files (PDF, Word, slides)
             </FilePicker>
             <button className="secondary block" onClick={() => setSyllabusSheet('paste')}>
               Paste text
@@ -144,13 +158,13 @@ export default function ContentTab() {
       )}
       {adding && (
         <NameSheet
-          title={adding.type === 'week' ? 'New week folder' : 'New topic folder'}
+          title="New folder"
           label="Folder name"
-          initial={adding.suggested}
-          placeholder={adding.type === 'week' ? 'e.g. Week 3' : 'e.g. Recursion'}
-          submitLabel={adding.type === 'week' ? 'Add week folder' : 'Add topic folder'}
+          placeholder="Type a name, e.g. Week 3 or Recursion"
+          suggestions={[adding.weekSuggestion, 'Topic: ']}
+          submitLabel="Add folder"
           onSubmit={async (name) => {
-            await addFolder(classId, adding.type, name)
+            await addFolder(classId, name)
           }}
           onClose={() => setAdding(null)}
         />

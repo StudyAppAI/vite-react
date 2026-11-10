@@ -5,6 +5,34 @@ export type FolderType = 'week' | 'topic'
 export interface StudyClass {
   id: number
   name: string
+  order: number // position in the Classes list
+  labelId: number | null // e.g. "Current Courses"; null when unlabelled
+  createdAt: number
+}
+
+// A label that groups classes on the Classes page.
+export interface ClassLabel {
+  id: number
+  name: string
+  order: number
+  createdAt: number
+}
+
+// A circle on the mind map. Topics are big circles; concepts are small
+// circles inside a topic. Removed nodes are kept (removed: true) so the AI
+// never adds back something the user deleted.
+export interface MindMapNode {
+  id: number
+  kind: 'topic' | 'concept'
+  label: string
+  sublabel: string // class name for a topic made from a folder
+  folderId: number | null // the folder a topic came from
+  parentId: number | null // the topic a concept sits in
+  x: number
+  y: number
+  r: number
+  removed: boolean
+  createdBy: 'user' | 'ai'
   createdAt: number
 }
 
@@ -17,9 +45,9 @@ export interface Folder {
   createdAt: number
 }
 
-// What a content item is: an uploaded PDF, an uploaded PowerPoint, pasted
-// text, or (from older versions) some other uploaded file.
-export type ContentKind = 'pdf' | 'pptx' | 'text' | 'other'
+// What a content item is: an uploaded PDF, PowerPoint or Word file, pasted
+// text, or some other uploaded file whose text can't be read.
+export type ContentKind = 'pdf' | 'pptx' | 'docx' | 'text' | 'other'
 
 // A content item in a folder, or a class's syllabus (folderId null).
 export interface StoredFile {
@@ -33,7 +61,7 @@ export interface StoredFile {
   blob: Blob | null // null for pasted text
   extractedText: string | null // null while the text is still being read
   extractionError: string | null
-  partCount: number | null // pages in a PDF, slides in a PowerPoint
+  partCount: number | null // pages in a PDF, slides in a PowerPoint, paragraphs in Word
   createdAt: number
 }
 
@@ -80,6 +108,8 @@ export const db = new Dexie('StudyAppDB') as Dexie & {
   flashcards: EntityTable<Flashcard, 'id'>
   reviewResults: EntityTable<ReviewResult, 'id'>
   lessons: EntityTable<Lesson, 'id'>
+  labels: EntityTable<ClassLabel, 'id'>
+  mindMapNodes: EntityTable<MindMapNode, 'id'>
 }
 
 // Version 1 was the first release: classes, numbered weeks, and empty
@@ -134,6 +164,8 @@ export function kindOf(name: string, mimeType: string): ContentKind {
   const lower = name.toLowerCase()
   if (mimeType === 'application/pdf' || lower.endsWith('.pdf')) return 'pdf'
   if (lower.endsWith('.pptx')) return 'pptx'
+  if (lower.endsWith('.docx')) return 'docx'
+  if (lower.endsWith('.txt') || lower.endsWith('.md') || mimeType.startsWith('text/')) return 'text'
   return 'other'
 }
 
@@ -150,10 +182,95 @@ db.version(4)
       })
   })
 
+// Version 5: classes get an order and a label; label and mind map tables.
+db.version(5)
+  .stores({
+    labels: '++id, order',
+    mindMapNodes: '++id, kind, folderId, parentId',
+  })
+  .upgrade(async (tx) => {
+    const classes = await tx.table('classes').toArray()
+    classes.sort((a, b) => a.createdAt - b.createdAt)
+    for (const [i, c] of classes.entries()) {
+      await tx.table('classes').update(c.id, { order: i + 1, labelId: null })
+    }
+  })
+
+// ---------- Ordering ----------
+
+// Swaps a row's order with its neighbour in the given list (already sorted
+// by order). direction -1 moves it up, +1 moves it down.
+async function swapOrder(
+  tableName: 'classes' | 'folders' | 'labels',
+  list: { id: number; order: number }[],
+  id: number,
+  direction: -1 | 1,
+) {
+  const i = list.findIndex((item) => item.id === id)
+  const j = i + direction
+  if (i < 0 || j < 0 || j >= list.length) return
+  const a = list[i]
+  const b = list[j]
+  // Equal orders (possible in old data) would not swap, so space them out.
+  const aOrder = a.order === b.order ? b.order + direction : b.order
+  const table = db.table(tableName)
+  await db.transaction('rw', table, async () => {
+    await table.update(a.id, { order: aOrder })
+    await table.update(b.id, { order: a.order })
+  })
+}
+
 // ---------- Classes ----------
 
+export async function getClassesInOrder(): Promise<StudyClass[]> {
+  return (await db.classes.toArray()).sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
+}
+
 export async function addClass(name: string): Promise<number> {
-  return db.classes.add({ name, createdAt: Date.now() })
+  const classes = await getClassesInOrder()
+  const order = classes.length ? classes[classes.length - 1].order + 1 : 1
+  return db.classes.add({ name, order, labelId: null, createdAt: Date.now() })
+}
+
+// Moves a class up or down among the classes with the same label.
+export async function moveClass(classId: number, direction: -1 | 1): Promise<void> {
+  const all = await getClassesInOrder()
+  const current = all.find((c) => c.id === classId)
+  if (!current) return
+  const group = all.filter((c) => c.labelId === current.labelId)
+  await swapOrder('classes', group, classId, direction)
+}
+
+export async function setClassLabel(classId: number, labelId: number | null): Promise<void> {
+  await db.classes.update(classId, { labelId })
+}
+
+// ---------- Labels ----------
+
+export async function getLabelsInOrder(): Promise<ClassLabel[]> {
+  return (await db.labels.toArray()).sort((a, b) => a.order - b.order)
+}
+
+export async function addLabel(name: string): Promise<number> {
+  const labels = await getLabelsInOrder()
+  const order = labels.length ? labels[labels.length - 1].order + 1 : 1
+  return db.labels.add({ name, order, createdAt: Date.now() })
+}
+
+export async function renameLabel(labelId: number, name: string): Promise<void> {
+  await db.labels.update(labelId, { name })
+}
+
+export async function moveLabel(labelId: number, direction: -1 | 1): Promise<void> {
+  await swapOrder('labels', await getLabelsInOrder(), labelId, direction)
+}
+
+// Deleting a label keeps its classes; they just lose the label.
+export async function deleteLabel(labelId: number): Promise<void> {
+  await db.transaction('rw', db.labels, db.classes, async () => {
+    await db.classes.filter((c) => c.labelId === labelId).modify({ labelId: null })
+    await db.labels.delete(labelId)
+  })
 }
 
 export async function renameClass(classId: number, name: string): Promise<void> {
@@ -190,10 +307,23 @@ export async function getFoldersForClass(classId: number): Promise<Folder[]> {
 
 export async function nextWeekNumber(classId: number): Promise<number> {
   const folders = await db.folders.where('classId').equals(classId).toArray()
-  return folders.filter((f) => f.type === 'week').length + 1
+  const numbers = folders.map((f) => Number(f.name.match(/^week\s*(\d+)/i)?.[1] ?? 0))
+  return Math.max(0, ...numbers) + 1
 }
 
-export async function addFolder(classId: number, type: FolderType, name: string): Promise<number> {
+// A folder named "Week 3" is a week; anything else is a topic.
+export function folderTypeFromName(name: string): FolderType {
+  return /^week\b/i.test(name.trim()) ? 'week' : 'topic'
+}
+
+export async function moveFolder(folderId: number, direction: -1 | 1): Promise<void> {
+  const folder = await db.folders.get(folderId)
+  if (!folder) return
+  await swapOrder('folders', await getFoldersForClass(folder.classId), folderId, direction)
+}
+
+export async function addFolder(classId: number, name: string): Promise<number> {
+  const type = folderTypeFromName(name)
   return db.transaction('rw', db.folders, async () => {
     const last = await db.folders
       .where('[classId+order]')
@@ -210,7 +340,7 @@ export async function addFolder(classId: number, type: FolderType, name: string)
 }
 
 export async function renameFolder(folderId: number, name: string): Promise<void> {
-  await db.folders.update(folderId, { name })
+  await db.folders.update(folderId, { name, type: folderTypeFromName(name) })
 }
 
 export async function deleteFolder(folderId: number): Promise<void> {
@@ -310,4 +440,34 @@ export async function deleteFile(fileId: number): Promise<void> {
 
 export async function saveReviewResult(flashcardId: number, correct: boolean): Promise<void> {
   await db.reviewResults.add({ flashcardId, correct, answeredAt: Date.now() })
+}
+
+// ---------- Mind map ----------
+
+export async function getMindMapNodes(): Promise<MindMapNode[]> {
+  return db.mindMapNodes.filter((n) => !n.removed).toArray()
+}
+
+export async function addMindMapNode(
+  node: Omit<MindMapNode, 'id' | 'removed' | 'createdAt'>,
+): Promise<number> {
+  return db.mindMapNodes.add({ ...node, removed: false, createdAt: Date.now() })
+}
+
+export async function moveMindMapNodes(positions: { id: number; x: number; y: number }[]) {
+  await db.transaction('rw', db.mindMapNodes, async () => {
+    for (const p of positions) await db.mindMapNodes.update(p.id, { x: p.x, y: p.y })
+  })
+}
+
+export async function updateMindMapNode(id: number, changes: Partial<Pick<MindMapNode, 'label' | 'r'>>) {
+  await db.mindMapNodes.update(id, changes)
+}
+
+// Removing a topic removes its concepts too.
+export async function removeMindMapNode(id: number): Promise<void> {
+  await db.transaction('rw', db.mindMapNodes, async () => {
+    await db.mindMapNodes.update(id, { removed: true })
+    await db.mindMapNodes.where('parentId').equals(id).modify({ removed: true })
+  })
 }

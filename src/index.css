@@ -485,12 +485,24 @@ button.row:disabled {
 /* Keeps the Start button reachable above the tab bar on long lists. */
 .sticky-action {
   position: sticky;
-  bottom: calc(env(safe-area-inset-bottom) + var(--tab-height) + 12px);
-  margin-top: 20px;
+  z-index: 5;
+  bottom: calc(env(safe-area-inset-bottom) + var(--tab-height));
+  margin: 20px -16px 0;
+  padding: 10px 16px 12px;
+  background: var(--bg);
+  border-top: 0.5px solid var(--separator);
 }
 
 .sticky-action .primary {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* Solid grey instead of see-through, so the list behind never shows. */
+.sticky-action .primary:disabled {
+  opacity: 1;
+  background: var(--fill);
+  color: var(--secondary);
+  box-shadow: none;
 }
 
 /* ---------- Sheet ---------- */
@@ -771,7 +783,7 @@ button.row:disabled {
   gap: 10px;
 }
 
-.button-row > button {
+.button-row > * {
   padding: 0 10px;
   font-size: 15px;
   height: auto;
@@ -866,9 +878,6 @@ button.row:disabled {
 
 /* ---------- Lists with actions under each row ---------- */
 
-.spaced-list {
-  margin-top: 20px;
-}
 
 .item-actions {
   display: flex;
@@ -1005,10 +1014,6 @@ button.row:disabled {
   margin-top: 28px;
 }
 
-.text-input.code {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
 
 /* ---------- Account ---------- */
 
@@ -1094,4 +1099,243 @@ button.row:disabled {
 .empty-title {
   font-size: 20px;
   font-weight: 600;
+}
+
+/* ---------- Suggestions under a name field ---------- */
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.suggestions-label {
+  font-size: 13px;
+  color: var(--secondary);
+}
+
+.chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.chip:active {
+  opacity: 0.6;
+}
+
+/* ---------- Small text actions above lists ---------- */
+
+.toolbar-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 12px -8px 0;
+}
+
+.text-action {
+  min-height: 40px;
+  padding: 0 8px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.text-action:active {
+  opacity: 0.5;
+}
+
+.item-actions {
+  flex-wrap: wrap;
+}
+
+.item-actions button {
+  flex: 1 1 30%;
+}
+
+.item-actions button:disabled {
+  opacity: 0.35;
+}
+
+.sheet-scroll {
+  max-height: 70dvh;
+  overflow-y: auto;
+}
+
+/* ---------- Generate for several folders, no-content notices ---------- */
+
+.bulk-box {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px;
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bulk-box:empty {
+  display: none;
+}
+
+.notice-text {
+  font-size: 15px;
+  color: var(--secondary);
+  line-height: 1.4;
+}
+
+/* ---------- Mind map ---------- */
+
+.mindmap-page .large-header {
+  margin-bottom: 12px;
+}
+
+.mindmap-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.mindmap-toolbar > button {
+  height: auto;
+  min-height: 44px;
+  padding: 4px 6px;
+  font-size: 13px;
+  line-height: 1.2;
+  border-radius: 10px;
+}
+
+.mindmap-ai {
+  margin: 10px 0;
+}
+
+.mindmap-canvas {
+  position: relative;
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--tab-height) - 290px);
+  min-height: 300px;
+  border-radius: 16px;
+  overflow: hidden;
+  background-color: var(--card);
+  background-image: radial-gradient(var(--separator) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.mindmap-canvas svg {
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.mindmap-empty {
+  position: absolute;
+  inset: auto 16px 16px;
+  text-align: center;
+  color: var(--secondary);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.mm-topic circle {
+  stroke-width: 3;
+}
+
+.mm-topic.topic-a circle { fill: #e8e7fd; stroke: #4f46e5; }
+.mm-topic.topic-b circle { fill: #dff7f3; stroke: #0d9488; }
+.mm-topic.topic-c circle { fill: #fff1d6; stroke: #d97706; }
+.mm-topic.topic-d circle { fill: #fde4ec; stroke: #db2777; }
+.mm-topic.topic-e circle { fill: #e2efff; stroke: #2563eb; }
+.mm-topic.topic-f circle { fill: #ecf6dc; stroke: #65a30d; }
+
+@media (prefers-color-scheme: dark) {
+  .mm-topic.topic-a circle { fill: #26244d; }
+  .mm-topic.topic-b circle { fill: #11302c; }
+  .mm-topic.topic-c circle { fill: #3a2a10; }
+  .mm-topic.topic-d circle { fill: #3a1625; }
+  .mm-topic.topic-e circle { fill: #14284a; }
+  .mm-topic.topic-f circle { fill: #233212; }
+}
+
+.mm-topic.selected circle,
+.mm-concept.selected circle {
+  stroke-width: 6;
+  stroke-dasharray: 10 6;
+}
+
+.mm-topic-label {
+  text-anchor: middle;
+  font-size: 20px;
+  font-weight: 700;
+  fill: var(--text);
+}
+
+.mm-topic-sublabel {
+  text-anchor: middle;
+  font-size: 14px;
+  fill: var(--secondary);
+}
+
+.mm-concept circle {
+  fill: var(--card);
+  stroke: var(--secondary);
+  stroke-width: 2;
+}
+
+.mm-concept.selected circle {
+  stroke: var(--accent);
+}
+
+.mm-concept-label {
+  text-anchor: middle;
+  font-size: 12px;
+  font-weight: 500;
+  fill: var(--text);
+}
+
+.mindmap-selection {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + var(--tab-height));
+  z-index: 15;
+  padding: 12px calc(env(safe-area-inset-right) + 16px) 12px calc(env(safe-area-inset-left) + 16px);
+  background: var(--tab-bar);
+  border-top: 0.5px solid var(--separator);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+.selection-title {
+  font-size: 15px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.selection-actions button {
+  flex: 1 1 30%;
+  min-height: 38px;
+  border-radius: 9px;
+  background: var(--fill);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.selection-actions .danger-text {
+  color: var(--danger);
 }

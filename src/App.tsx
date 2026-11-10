@@ -15,6 +15,7 @@ import LearnScreen from './screens/LearnScreen.tsx'
 import LearnClassScreen from './screens/LearnClassScreen.tsx'
 import LessonScreen from './screens/LessonScreen.tsx'
 import AccountScreen from './screens/AccountScreen.tsx'
+import MindMapScreen from './screens/MindMapScreen.tsx'
 
 export default function App() {
   const { token } = useAuth()
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="learn/:classId" element={<LearnClassScreen />} />
           <Route path="learn/:classId/:folderId" element={<LessonScreen />} />
 
+          <Route path="mindmap" element={<MindMapScreen />} />
           <Route path="account" element={<AccountScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

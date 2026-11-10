@@ -55,7 +55,7 @@ export default function GenerateButton({ folderId, kind, small = false }: Props)
   const blocked = !state.hasText
     ? state.reading
       ? 'Reading your files…'
-      : 'Add content first'
+      : 'Add content first: no files or text in this folder yet'
     : !online
       ? 'Needs internet'
       : null

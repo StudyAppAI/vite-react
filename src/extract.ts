@@ -1,6 +1,8 @@
 // Reads the text out of uploaded files, in the browser, right after upload.
 //   PDF: pdf.js, page by page ("--- Page 3 ---")
 //   PowerPoint (.pptx): unzip with JSZip, read each slide's XML ("--- Slide 3 ---")
+//   Word (.docx): unzip with JSZip, read the document's paragraphs
+//   Plain text (.txt, .md): read as is
 // The result is saved on the content item as extractedText.
 
 import { db, type ContentKind } from './db.ts'
@@ -12,6 +14,7 @@ export interface Extracted {
 
 const DRAWING_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+const WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
 async function extractPdf(blob: Blob): Promise<Extracted> {
   // Loaded only when a PDF is uploaded. The legacy build supports older iPhones.
@@ -106,10 +109,47 @@ async function extractPptx(blob: Blob): Promise<Extracted> {
   return { text: slides.join('\n\n'), partCount: paths.length }
 }
 
-export async function extractText(kind: ContentKind, blob: Blob): Promise<Extracted> {
+async function extractDocx(blob: Blob): Promise<Extracted> {
+  const JSZip = (await import('jszip')).default
+  let xml: string | undefined
+  try {
+    xml = await (await JSZip.loadAsync(blob)).file('word/document.xml')?.async('string')
+  } catch {
+    xml = undefined
+  }
+  if (!xml) throw new Error('This file couldn’t be opened as a Word document (.docx).')
+
+  const paragraphs = Array.from(parseXml(xml).getElementsByTagNameNS(WORD_NS, 'p'))
+    .map((p) =>
+      Array.from(p.getElementsByTagNameNS(WORD_NS, 't'))
+        .map((t) => t.textContent ?? '')
+        .join('')
+        .trim(),
+    )
+    .filter(Boolean)
+  if (paragraphs.length === 0) throw new Error('This Word document has no readable text.')
+  return { text: paragraphs.join('\n'), partCount: paragraphs.length }
+}
+
+async function extractPlainText(blob: Blob): Promise<Extracted> {
+  const text = (await blob.text()).trim()
+  if (!text) throw new Error('This file is empty.')
+  return { text, partCount: 0 }
+}
+
+export async function extractText(kind: ContentKind, blob: Blob, name: string): Promise<Extracted> {
   if (kind === 'pdf') return extractPdf(blob)
   if (kind === 'pptx') return extractPptx(blob)
-  throw new Error('This file type can’t be read. Upload a PDF or PowerPoint (.pptx).')
+  if (kind === 'docx') return extractDocx(blob)
+  if (kind === 'text') return extractPlainText(blob)
+  const lower = name.toLowerCase()
+  if (lower.endsWith('.doc')) {
+    throw new Error('Old Word files (.doc) can’t be read. Save it as .docx or PDF and upload it again.')
+  }
+  if (lower.endsWith('.ppt')) {
+    throw new Error('Old PowerPoint files (.ppt) can’t be read. Save it as .pptx or PDF and upload it again.')
+  }
+  throw new Error('This file type can’t be read. Upload a PDF, Word or PowerPoint file.')
 }
 
 // Reads every content item that doesn't have its text yet. Runs after each
@@ -133,7 +173,7 @@ export async function readPendingFiles(): Promise<void> {
       for (const item of pending) {
         try {
           if (!item.blob) throw new Error('This item has no file to read.')
-          const { text, partCount } = await extractText(item.kind, item.blob)
+          const { text, partCount } = await extractText(item.kind, item.blob, item.name)
           await db.files.update(item.id, { extractedText: text, partCount, extractionError: null })
         } catch (e) {
           const message = e instanceof Error ? e.message : 'The text couldn’t be read.'
