@@ -28,7 +28,9 @@ export default function CreateAccountScreen() {
     <main className="screen account-gate">
       <img className="gate-icon" src="/icon.svg" alt="" width={72} height={72} />
       <h1>Create account</h1>
-      <p className="subtitle">Enter your name and the access code you were given.</p>
+      <p className="subtitle">
+        Enter your name and the access code you were given. Capital and small letters both work.
+      </p>
 
       <form className="gate-form" onSubmit={submit}>
         <label className="field-label" htmlFor="gate-name">
@@ -48,12 +50,12 @@ export default function CreateAccountScreen() {
         </label>
         <input
           id="gate-code"
-          className="text-input code"
+          className="text-input"
           type="text"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           autoComplete="off"
-          autoCapitalize="characters"
+          autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
           placeholder="e.g. K7Q2-ALPHA"

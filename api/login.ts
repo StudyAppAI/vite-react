@@ -18,7 +18,11 @@ export async function POST(request: Request): Promise<Response> {
   if (!code) return json({ error: 'Enter your access code.' }, 400)
 
   try {
-    if (!allowedCodes().has(code)) {
+    const codes = allowedCodes()
+    if (codes.size === 0) {
+      throw new ConfigError('APP_ACCESS_CODES is not set, or has no codes in it. Add it in Vercel and redeploy.')
+    }
+    if (!codes.has(code)) {
       await wait(600) // slows down guessing
       return json({ error: 'That access code isn’t valid. Check it and try again.' }, 401)
     }

@@ -1,19 +1,29 @@
 // Access codes and login tokens. Files in folders starting with "_" are not
 // turned into API routes by Vercel.
 //
-// APP_ACCESS_CODES: comma-separated code:name pairs, e.g. "K7Q2-ALPHA:Tyler,M9X4-BETA:Sam"
+// APP_ACCESS_CODES: code:name pairs, e.g. K7Q2-ALPHA:Tyler,M9X4-BETA:Sam
+//   Codes match without caring about capitals. Pairs can be separated by
+//   commas, semicolons or new lines, and quotes around the value are ignored.
 // SESSION_SECRET: a long random string used to sign tokens
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
+// Makes two ways of writing the same code compare equal: ignores capitals,
+// spaces, quotes, invisible characters, and the long dashes iPhones type in
+// place of "-".
 export function normalizeCode(code: string): string {
-  return code.trim().toUpperCase()
+  return code
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/["'\u2018\u2019\u201C\u201D\s]/g, '')
+    .toUpperCase()
 }
 
 // The set of codes that are currently allowed.
 export function allowedCodes(): Set<string> {
   const codes = new Set<string>()
-  for (const pair of (process.env.APP_ACCESS_CODES ?? '').split(',')) {
+  for (const pair of (process.env.APP_ACCESS_CODES ?? '').split(/[,;\n]/)) {
     const code = normalizeCode(pair.split(':')[0] ?? '')
     if (code) codes.add(code)
   }
