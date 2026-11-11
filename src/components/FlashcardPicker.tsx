@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, getClassesInOrder, type Folder, type StudyClass } from '../db.ts'
+import { addStudySet, db, getClassesInOrder, type Folder, type StudyClass } from '../db.ts'
 import { plural } from '../hooks.ts'
 import FolderBadge from './FolderBadge.tsx'
 import GenerateButton from './GenerateButton.tsx'
 import ComingSoonButton from './ComingSoonButton.tsx'
 import BulkGenerateButton from './BulkGenerateButton.tsx'
 import LearnTopicButton from './LearnTopicButton.tsx'
+import NameSheet from './NameSheet.tsx'
+import { showToast } from '../toast.ts'
 
 interface Props {
   // Set on the class page's Flashcards tab: only this class, no class picker.
@@ -48,6 +50,7 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
   }, [classId])
   const [pickedClasses, setPickedClasses] = useState<Set<number>>(new Set())
   const [pickedFolders, setPickedFolders] = useState<Set<number>>(new Set())
+  const [savingSet, setSavingSet] = useState(false)
 
   if (!data) return null
   const { classes, byClass, cardCounts, withText } = data
@@ -64,6 +67,8 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
   const scope = chosen.length > 0 ? chosen : shownFolders
   const scopeWithText = scope.filter((f) => withText.has(f.id))
   const needCards = scopeWithText.filter((f) => (cardCounts.get(f.id) ?? 0) === 0)
+  const empty = scope.filter((f) => !withText.has(f.id))
+  const classOf = new Map(classes.map((c) => [c.id, c.name]))
 
   const toggleFolder = (id: number) => {
     const next = new Set(pickedFolders)
@@ -169,13 +174,10 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
       {scope.length > 0 && (
         <div className="bulk-box">
           {scopeWithText.length === 0 ? (
-            <>
-              <p className="notice-text">
-                There’s no content in {chosen.length > 0 ? 'the selected folders' : 'these folders'} to generate
-                flashcards from. Add files or text in Course Content, or learn a new topic instead.
-              </p>
-              <LearnTopicButton />
-            </>
+            <p className="notice-text">
+              There’s no content in {chosen.length > 0 ? 'the selected folders' : 'these folders'} to generate
+              flashcards from. Tap a folder below to add files or text, or learn a new topic instead.
+            </p>
           ) : (
             <BulkGenerateButton
               kind="flashcards"
@@ -183,6 +185,21 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
               allDoneText={`Every ${chosen.length > 0 ? 'selected ' : ''}folder with content has flashcards.`}
             />
           )}
+          {empty.length > 0 && (
+            <div className="empty-folders">
+              <p className="field-label">Folders with no content yet</p>
+              {empty.map((f) => (
+                <Link key={f.id} className="folder-link" to={`/classes/${f.classId}/content/${f.id}`}>
+                  <span>
+                    Add content to {f.name}
+                    {classId === undefined && <span className="row-detail"> · {classOf.get(f.classId)}</span>}
+                  </span>
+                  <span aria-hidden="true">›</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          {scopeWithText.length === 0 && <LearnTopicButton />}
         </div>
       )}
 
@@ -198,7 +215,27 @@ export default function FlashcardPicker({ classId, sessionPath }: Props) {
           <p className="generate-note center">The chosen folders have no flashcards yet.</p>
         )}
       </div>
+      {chosen.length > 0 && (
+        <button className="secondary block spaced" onClick={() => setSavingSet(true)}>
+          Save selection as a set
+        </button>
+      )}
       <ComingSoonButton label="Take a test" className="block spaced" />
+
+      {savingSet && (
+        <NameSheet
+          title="New flashcard set"
+          label="Set name"
+          placeholder="e.g. Midterm"
+          suggestions={['Midterm', 'Final', 'This week']}
+          submitLabel={`Save set of ${plural(chosen.length, 'folder')}`}
+          onSubmit={async (name) => {
+            await addStudySet(name, chosen.map((f) => f.id))
+            showToast(`Saved “${name}” to My sets`)
+          }}
+          onClose={() => setSavingSet(false)}
+        />
+      )}
     </>
   )
 }

@@ -1,11 +1,22 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Header from '../components/Header.tsx'
 import FilePicker from '../components/FilePicker.tsx'
 import PasteTextSheet from '../components/PasteTextSheet.tsx'
 import ContentItemRow from '../components/ContentItemRow.tsx'
 import GenerateButton from '../components/GenerateButton.tsx'
-import { addFilesToFolder, addTextToFolder, db, deleteFile, type StoredFile } from '../db.ts'
+import EditableName from '../components/EditableName.tsx'
+import { TrashIcon } from '../components/icons.tsx'
+import {
+  addFilesToFolder,
+  addTextToFolder,
+  db,
+  deleteFile,
+  deleteFolder,
+  renameFolder,
+  type StoredFile,
+} from '../db.ts'
 import { readPendingFiles } from '../extract.ts'
 import { folderTypeLabel, plural, useIdParam } from '../hooks.ts'
 
@@ -23,6 +34,7 @@ export default function FolderScreen() {
     false,
   )
   const [pasting, setPasting] = useState(false)
+  const navigate = useNavigate()
 
   const back = { to: `/classes/${classId}/content`, label: 'Course Content' }
 
@@ -41,13 +53,45 @@ export default function FolderScreen() {
     readPendingFiles()
   }
 
+  const removeFolder = async () => {
+    if (
+      window.confirm(
+        `Delete “${folder.name}”?\n\nThis can’t be undone and the folder can’t be recovered. Its uploaded files and slides, pasted text, flashcards and lesson will be permanently deleted.`,
+      )
+    ) {
+      await deleteFolder(folderId)
+      navigate(back.to, { replace: true })
+    }
+  }
+
   const remove = async (item: StoredFile) => {
     if (window.confirm(`Delete “${item.name}”?`)) await deleteFile(item.id)
   }
 
   return (
     <>
-      <Header back={back} title={folder.name} subtitle={`${folderTypeLabel(folder)} folder`} />
+      <Header
+        back={back}
+        titleNode={
+          <EditableName
+            value={folder.name}
+            what="folder"
+            className="title-name"
+            onSave={(name) => renameFolder(folderId, name)}
+          />
+        }
+        subtitle={`${folderTypeLabel(folder)} folder · tap the name to rename it`}
+        right={
+          <button
+            className="icon-button trash"
+            aria-label={`Delete ${folder.name}`}
+            title="Delete folder"
+            onClick={removeFolder}
+          >
+            <TrashIcon />
+          </button>
+        }
+      />
 
       <h2 className="section-header">Content</h2>
       {items && items.length > 0 ? (
@@ -73,13 +117,13 @@ export default function FolderScreen() {
       <h2 className="section-header">Flashcards</h2>
       <div className="action-card">
         <p className="row-detail">{cardCount === 0 ? 'No flashcards yet.' : `Deck: ${plural(cardCount, 'flashcard')}`}</p>
-        <GenerateButton folderId={folderId} kind="flashcards" />
+        <GenerateButton folderId={folderId} kind="flashcards" linkWhenEmpty={false} />
       </div>
 
       <h2 className="section-header">Lesson</h2>
       <div className="action-card">
         <p className="row-detail">{hasLesson ? 'Lesson ready.' : 'No lesson yet.'}</p>
-        <GenerateButton folderId={folderId} kind="lesson" />
+        <GenerateButton folderId={folderId} kind="lesson" linkWhenEmpty={false} />
       </div>
 
       {pasting && (

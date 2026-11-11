@@ -5,15 +5,24 @@ export type FolderType = 'week' | 'topic'
 export interface StudyClass {
   id: number
   name: string
-  order: number // position in the Classes list
-  labelId: number | null // e.g. "Current Courses"; null when unlabelled
+  order: number // position within its section
+  sectionId: number // the section it is listed under on the Classes page
   createdAt: number
 }
 
-// A label that groups classes on the Classes page.
-export interface ClassLabel {
+// A section that groups classes on the Classes page, e.g. "Current Courses".
+export interface ClassSection {
   id: number
   name: string
+  order: number
+  createdAt: number
+}
+
+// A flashcard set the user makes from any folders, e.g. "Midterm" or "Week 2".
+export interface StudySet {
+  id: number
+  name: string
+  folderIds: number[]
   order: number
   createdAt: number
 }
@@ -90,7 +99,8 @@ export const db = new Dexie('StudyAppDB') as Dexie & {
   flashcards: EntityTable<Flashcard, 'id'>
   reviewResults: EntityTable<ReviewResult, 'id'>
   lessons: EntityTable<Lesson, 'id'>
-  labels: EntityTable<ClassLabel, 'id'>
+  sections: EntityTable<ClassSection, 'id'>
+  studySets: EntityTable<StudySet, 'id'>
 }
 
 // Version 1 was the first release: classes, numbered weeks, and empty
@@ -181,12 +191,42 @@ db.version(5)
 // Version 6: the mind map was removed, along with its saved circles.
 db.version(6).stores({ mindMapNodes: null })
 
+// Version 7: labels become sections, every class belongs to a section
+// (unlabelled classes go into a section called "No label"), and flashcard
+// sets are added.
+db.version(7)
+  .stores({
+    labels: null,
+    sections: '++id, order',
+    studySets: '++id, order',
+  })
+  .upgrade(async (tx) => {
+    const labels = await tx.table('labels').toArray()
+    for (const l of labels) {
+      await tx.table('sections').add({ id: l.id, name: l.name, order: l.order, createdAt: l.createdAt })
+    }
+    const known = new Set(labels.map((l) => l.id))
+    const classes = await tx.table('classes').toArray()
+    let noLabelId: number | null = null
+    for (const c of classes) {
+      let sectionId = known.has(c.labelId) ? c.labelId : null
+      if (sectionId === null) {
+        if (noLabelId === null) {
+          const last = Math.max(0, ...labels.map((l) => l.order))
+          noLabelId = (await tx.table('sections').add({ name: 'No label', order: last + 1, createdAt: Date.now() })) as number
+        }
+        sectionId = noLabelId
+      }
+      await tx.table('classes').update(c.id, { sectionId, labelId: undefined })
+    }
+  })
+
 // ---------- Ordering ----------
 
 // Swaps a row's order with its neighbour in the given list (already sorted
 // by order). direction -1 moves it up, +1 moves it down.
 async function swapOrder(
-  tableName: 'folders' | 'labels',
+  tableName: 'folders',
   list: { id: number; order: number }[],
   id: number,
   direction: -1 | 1,
@@ -211,48 +251,66 @@ export async function getClassesInOrder(): Promise<StudyClass[]> {
   return (await db.classes.toArray()).sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
 }
 
+// A new class goes at the end of the top section. With no sections yet, a
+// section called "My classes" is made for it.
 export async function addClass(name: string): Promise<number> {
-  const classes = await getClassesInOrder()
-  const order = classes.length ? classes[classes.length - 1].order + 1 : 1
-  return db.classes.add({ name, order, labelId: null, createdAt: Date.now() })
+  return db.transaction('rw', db.classes, db.sections, async () => {
+    let section = (await getSectionsInOrder())[0]
+    if (!section) {
+      const id = await db.sections.add({ name: 'My classes', order: 1, createdAt: Date.now() })
+      section = (await db.sections.get(id))!
+    }
+    const inSection = (await db.classes.toArray()).filter((c) => c.sectionId === section.id)
+    const order = Math.max(0, ...inSection.map((c) => c.order)) + 1
+    return db.classes.add({ name, order, sectionId: section.id, createdAt: Date.now() })
+  })
 }
 
-// Saves the Classes list after the user drags a class: the moved class takes
-// the label of the section it was dropped in, and every class gets its new
-// position. orderedIds is the whole list, top to bottom.
-export async function placeClass(classId: number, labelId: number | null, orderedIds: number[]) {
+// Saves the Classes list after the user drags a class: the moved class goes
+// into the section it was dropped in, and every class gets its new position.
+// orderedIds is the whole list, top to bottom.
+export async function placeClass(classId: number, sectionId: number, orderedIds: number[]) {
   await db.transaction('rw', db.classes, async () => {
-    await db.classes.update(classId, { labelId })
+    await db.classes.update(classId, { sectionId })
     for (const [i, id] of orderedIds.entries()) await db.classes.update(id, { order: i + 1 })
   })
 }
 
-// ---------- Labels ----------
+// ---------- Sections ----------
 
-export async function getLabelsInOrder(): Promise<ClassLabel[]> {
-  return (await db.labels.toArray()).sort((a, b) => a.order - b.order)
+export async function getSectionsInOrder(): Promise<ClassSection[]> {
+  return (await db.sections.toArray()).sort((a, b) => a.order - b.order)
 }
 
-export async function addLabel(name: string): Promise<number> {
-  const labels = await getLabelsInOrder()
-  const order = labels.length ? labels[labels.length - 1].order + 1 : 1
-  return db.labels.add({ name, order, createdAt: Date.now() })
+export async function addSection(name: string): Promise<number> {
+  const sections = await getSectionsInOrder()
+  const order = sections.length ? sections[sections.length - 1].order + 1 : 1
+  return db.sections.add({ name, order, createdAt: Date.now() })
 }
 
-export async function renameLabel(labelId: number, name: string): Promise<void> {
-  await db.labels.update(labelId, { name })
+export async function renameSection(sectionId: number, name: string): Promise<void> {
+  await db.sections.update(sectionId, { name })
 }
 
-export async function moveLabel(labelId: number, direction: -1 | 1): Promise<void> {
-  await swapOrder('labels', await getLabelsInOrder(), labelId, direction)
-}
-
-// Deleting a label keeps its classes; they just lose the label.
-export async function deleteLabel(labelId: number): Promise<void> {
-  await db.transaction('rw', db.labels, db.classes, async () => {
-    await db.classes.filter((c) => c.labelId === labelId).modify({ labelId: null })
-    await db.labels.delete(labelId)
+// Saves the order of the sections after the user drags one.
+export async function setSectionOrder(orderedIds: number[]): Promise<void> {
+  await db.transaction('rw', db.sections, async () => {
+    for (const [i, id] of orderedIds.entries()) await db.sections.update(id, { order: i + 1 })
   })
+}
+
+// Deletes a section. Its classes either move to the end of another section
+// (moveTo) or are deleted with everything in them (moveTo null).
+export async function deleteSection(sectionId: number, moveTo: number | null): Promise<void> {
+  const classes = (await db.classes.toArray()).filter((c) => c.sectionId === sectionId)
+  if (moveTo === null) {
+    for (const c of classes) await deleteClass(c.id)
+  } else {
+    const target = (await db.classes.toArray()).filter((c) => c.sectionId === moveTo)
+    let order = Math.max(0, ...target.map((c) => c.order))
+    for (const c of classes) await db.classes.update(c.id, { sectionId: moveTo, order: ++order })
+  }
+  await db.sections.delete(sectionId)
 }
 
 export async function renameClass(classId: number, name: string): Promise<void> {
@@ -262,8 +320,10 @@ export async function renameClass(classId: number, name: string): Promise<void> 
 export async function deleteClass(classId: number): Promise<void> {
   await db.transaction(
     'rw',
-    [db.classes, db.folders, db.files, db.flashcards, db.reviewResults, db.lessons],
+    [db.classes, db.folders, db.files, db.flashcards, db.reviewResults, db.lessons, db.studySets],
     async () => {
+      const folderIds = (await db.folders.where('classId').equals(classId).primaryKeys()) as number[]
+      await removeFoldersFromSets(folderIds)
       const cardIds = (await db.flashcards
         .where('classId')
         .equals(classId)
@@ -328,8 +388,9 @@ export async function renameFolder(folderId: number, name: string): Promise<void
 export async function deleteFolder(folderId: number): Promise<void> {
   await db.transaction(
     'rw',
-    [db.folders, db.files, db.flashcards, db.reviewResults, db.lessons],
+    [db.folders, db.files, db.flashcards, db.reviewResults, db.lessons, db.studySets],
     async () => {
+      await removeFoldersFromSets([folderId])
       const cardIds = (await db.flashcards
         .where('folderId')
         .equals(folderId)
@@ -422,4 +483,33 @@ export async function deleteFile(fileId: number): Promise<void> {
 
 export async function saveReviewResult(flashcardId: number, correct: boolean): Promise<void> {
   await db.reviewResults.add({ flashcardId, correct, answeredAt: Date.now() })
+}
+
+// ---------- Flashcard sets ----------
+
+export async function getStudySets(): Promise<StudySet[]> {
+  return (await db.studySets.toArray()).sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
+}
+
+export async function addStudySet(name: string, folderIds: number[]): Promise<number> {
+  const sets = await getStudySets()
+  const order = sets.length ? sets[sets.length - 1].order + 1 : 1
+  return db.studySets.add({ name, folderIds, order, createdAt: Date.now() })
+}
+
+export async function updateStudySet(setId: number, changes: Partial<Pick<StudySet, 'name' | 'folderIds'>>) {
+  await db.studySets.update(setId, changes)
+}
+
+export async function deleteStudySet(setId: number): Promise<void> {
+  await db.studySets.delete(setId)
+}
+
+// Deleted folders are taken out of every set.
+async function removeFoldersFromSets(folderIds: number[]) {
+  if (folderIds.length === 0) return
+  const gone = new Set(folderIds)
+  await db.studySets.toCollection().modify((set) => {
+    set.folderIds = set.folderIds.filter((id) => !gone.has(id))
+  })
 }

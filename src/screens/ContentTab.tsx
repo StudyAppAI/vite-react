@@ -6,6 +6,8 @@ import PasteTextSheet from '../components/PasteTextSheet.tsx'
 import Sheet from '../components/Sheet.tsx'
 import FilePicker from '../components/FilePicker.tsx'
 import ContentItemRow from '../components/ContentItemRow.tsx'
+import EditableName from '../components/EditableName.tsx'
+import { TrashIcon } from '../components/icons.tsx'
 import FolderBadge from '../components/FolderBadge.tsx'
 import {
   addFolder,
@@ -43,7 +45,6 @@ export default function ContentTab() {
   )
   const [syllabusSheet, setSyllabusSheet] = useState<'choose' | 'paste' | null>(null)
   const [adding, setAdding] = useState<{ weekSuggestion: string } | null>(null)
-  const [renaming, setRenaming] = useState<Folder | null>(null)
   const [reordering, setReordering] = useState(false)
 
   const uploadSyllabus = async (file: File) => {
@@ -57,7 +58,11 @@ export default function ContentTab() {
   }
 
   const removeFolder = async (f: Folder) => {
-    if (window.confirm(`Delete “${f.name}”? Its content, flashcards and lesson will be deleted too.`)) {
+    if (
+      window.confirm(
+        `Delete “${f.name}”?\n\nThis can’t be undone and the folder can’t be recovered. Its uploaded files and slides, pasted text, flashcards and lesson will be permanently deleted.`,
+      )
+    ) {
       await deleteFolder(f.id)
     }
   }
@@ -100,31 +105,39 @@ export default function ContentTab() {
       {folders && folders.length > 0 && (
         <ul className="list">
           {folders.map((f, i) => (
-            <li key={f.id} className="managed-item">
-              <Link className="row" to={`/classes/${classId}/content/${f.id}`}>
+            <li key={f.id} className="folder-card">
+              <div className="folder-card-top">
                 <FolderBadge folder={f} />
-                <span className="row-text">
-                  <span className="row-title">{f.name}</span>
-                  <span className="row-detail">
-                    {folderTypeLabel(f)} · {plural(itemCounts.get(f.id) ?? 0, 'item')}
-                  </span>
+                <EditableName
+                  value={f.name}
+                  what="folder"
+                  className="folder-name"
+                  onSave={(name) => renameFolder(f.id, name)}
+                />
+                <button
+                  className="icon-button trash"
+                  aria-label={`Delete ${f.name}`}
+                  title="Delete folder"
+                  onClick={() => removeFolder(f)}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+              <Link className="folder-open" to={`/classes/${classId}/content/${f.id}`}>
+                <span className="row-detail">
+                  {folderTypeLabel(f)} · {plural(itemCounts.get(f.id) ?? 0, 'item')}
                 </span>
-                <span className="chevron" aria-hidden="true">›</span>
+                <span className="open-label">
+                  Open folder <span aria-hidden="true">›</span>
+                </span>
               </Link>
-              {reordering ? (
+              {reordering && (
                 <div className="item-actions">
                   <button onClick={() => moveFolder(f.id, -1)} disabled={i === 0}>
                     Move up
                   </button>
                   <button onClick={() => moveFolder(f.id, 1)} disabled={i === folders.length - 1}>
                     Move down
-                  </button>
-                </div>
-              ) : (
-                <div className="item-actions">
-                  <button onClick={() => setRenaming(f)}>Rename folder</button>
-                  <button className="danger-text" onClick={() => removeFolder(f)}>
-                    Delete folder
                   </button>
                 </div>
               )}
@@ -167,16 +180,6 @@ export default function ContentTab() {
             await addFolder(classId, name)
           }}
           onClose={() => setAdding(null)}
-        />
-      )}
-      {renaming && (
-        <NameSheet
-          title="Rename folder"
-          label="Folder name"
-          initial={renaming.name}
-          submitLabel="Save folder name"
-          onSubmit={(name) => renameFolder(renaming.id, name)}
-          onClose={() => setRenaming(null)}
         />
       )}
     </>

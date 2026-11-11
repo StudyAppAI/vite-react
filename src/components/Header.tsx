@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 
 interface Props {
   title?: string
+  // Use instead of title when the title is something you can tap, e.g. to rename.
+  titleNode?: ReactNode
   subtitle?: string
   back?: { to: string; label: string }
   right?: ReactNode
@@ -10,7 +12,7 @@ interface Props {
 
 // iOS-style header: a small bar with a back link and an optional button on
 // the right, then a large title.
-export default function Header({ title, subtitle, back, right }: Props) {
+export default function Header({ title, titleNode, subtitle, back, right }: Props) {
   return (
     <>
       {(back || right) && (
@@ -28,9 +30,9 @@ export default function Header({ title, subtitle, back, right }: Props) {
           {right}
         </div>
       )}
-      {title && (
+      {(title || titleNode) && (
         <header className={back || right ? 'large-header' : 'large-header top'}>
-          <h1>{title}</h1>
+          <h1>{titleNode ?? title}</h1>
           {subtitle && <p className="subtitle">{subtitle}</p>}
         </header>
       )}

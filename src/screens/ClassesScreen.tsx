@@ -1,41 +1,48 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { flushSync } from 'react-dom'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Header from '../components/Header.tsx'
 import NameSheet from '../components/NameSheet.tsx'
+import EditableName from '../components/EditableName.tsx'
+import DeleteSectionSheet from '../components/DeleteSectionSheet.tsx'
 import LearnTopicButton from '../components/LearnTopicButton.tsx'
-import { ManageLabelsSheet } from '../components/LabelSheets.tsx'
 import { GripIcon, TrashIcon } from '../components/icons.tsx'
 import {
   addClass,
+  addSection,
   db,
   deleteClass,
+  deleteSection,
   getClassesInOrder,
-  getLabelsInOrder,
+  getSectionsInOrder,
   placeClass,
   renameClass,
+  renameSection,
+  setSectionOrder,
+  type ClassSection,
   type StudyClass,
 } from '../db.ts'
 import { plural } from '../hooks.ts'
 
-// How long a finger must rest on a class before it can be dragged.
+// How long a finger must rest on a class or section before it can be dragged.
 const HOLD_MS = 350
+const SECTION_SUGGESTIONS = ['Upcoming Courses', 'Current Courses', 'Completed Courses']
 
-interface Section {
-  key: string
-  labelId: number | null
-  title: string
-  ids: number[]
+interface Group {
+  section: ClassSection
+  ids: number[] // classes in this section, top to bottom
 }
 
+// What is being dragged: one class, or a whole section.
+type Dragging = { kind: 'class'; id: number; groups: Group[] } | { kind: 'section'; id: number; groups: Group[] }
+
 interface Press {
-  classId: number
+  kind: 'class' | 'section'
+  id: number
   pointerId: number
   startX: number
   startY: number
   timer: ReturnType<typeof setTimeout> | undefined
-  // The page-wide listeners for this press, so they can be removed later.
   move: (e: globalThis.PointerEvent) => void
   up: (e: globalThis.PointerEvent) => void
 }
@@ -45,22 +52,20 @@ export default function ClassesScreen() {
   const data = useLiveQuery(async () => {
     const counts = new Map<number, number>()
     await db.folders.each((f) => counts.set(f.classId, (counts.get(f.classId) ?? 0) + 1))
-    return { classes: await getClassesInOrder(), labels: await getLabelsInOrder(), counts }
+    return { classes: await getClassesInOrder(), sections: await getSectionsInOrder(), counts }
   })
-  const [adding, setAdding] = useState(false)
-  const [managingLabels, setManagingLabels] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  // While dragging: the class being moved and the sections as they would be if it were dropped now.
-  const [drag, setDrag] = useState<{ classId: number; sections: Section[] } | null>(null)
+  const [adding, setAdding] = useState<'class' | 'section' | null>(null)
+  const [deletingSection, setDeletingSection] = useState<ClassSection | null>(null)
+  const [drag, setDrag] = useState<Dragging | null>(null)
 
   const press = useRef<Press | null>(null)
   const dragRef = useRef(drag)
   dragRef.current = drag
   const justDragged = useRef(false)
-  const sectionEls = useRef(new Map<string, HTMLElement>())
+  const sectionEls = useRef(new Map<number, HTMLElement>())
   const rowEls = useRef(new Map<number, HTMLElement>())
 
-  // While a class is being dragged, stop the page from scrolling under the finger.
+  // While dragging, stop the page from scrolling under the finger.
   useEffect(() => {
     const stopScroll = (e: TouchEvent) => {
       if (dragRef.current) e.preventDefault()
@@ -70,63 +75,65 @@ export default function ClassesScreen() {
   }, [])
 
   if (!data) return null
-  const { classes, labels, counts } = data
+  const { classes, sections, counts } = data
   const byId = new Map(classes.map((c) => [c.id, c]))
-  const knownLabel = (id: number | null) => id !== null && labels.some((l) => l.id === id)
 
-  // One section per label (in label order), then classes without a label.
-  const savedSections: Section[] = [
-    ...labels.map((l) => ({
-      key: `label-${l.id}`,
-      labelId: l.id,
-      title: l.name,
-      ids: classes.filter((c) => c.labelId === l.id).map((c) => c.id),
-    })),
-    {
-      key: 'none',
-      labelId: null,
-      title: labels.length > 0 ? 'No label' : '',
-      ids: classes.filter((c) => !knownLabel(c.labelId)).map((c) => c.id),
-    },
-  ]
-  const sections = drag?.sections ?? savedSections
+  const savedGroups: Group[] = sections.map((section) => ({
+    section,
+    ids: classes.filter((c) => c.sectionId === section.id).map((c) => c.id),
+  }))
+  const groups = drag?.groups ?? savedGroups
+  const sameIds = (a: Group[], b: Group[]) =>
+    JSON.stringify(a.map((g) => [g.section.id, g.ids])) === JSON.stringify(b.map((g) => [g.section.id, g.ids]))
 
   // ---------- Dragging ----------
 
-  const startDrag = (classId: number) => {
+  const startDrag = (kind: 'class' | 'section', id: number) => {
     navigator.vibrate?.(10)
-    setEditingId(null)
-    setDrag({ classId, sections: savedSections })
+    setDrag({ kind, id, groups: savedGroups } as Dragging)
   }
 
-  // Works out where the dragged class would land for a finger at height y.
+  const rectOf = (el: HTMLElement | undefined) => el?.getBoundingClientRect()
+
+  // Works out where the dragged item would land for a finger at height y.
   const moveDragTo = (y: number) => {
     const current = dragRef.current
     if (!current) return
-    let target = current.sections[0]
-    let best = Infinity
-    for (const s of current.sections) {
-      const rect = sectionEls.current.get(s.key)?.getBoundingClientRect()
-      if (!rect) continue
-      const distance = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0
-      if (distance < best) {
-        best = distance
-        target = s
+    let next: Group[]
+
+    if (current.kind === 'section') {
+      const others = current.groups.filter((g) => g.section.id !== current.id)
+      const index = others.filter((g) => {
+        const r = rectOf(sectionEls.current.get(g.section.id))
+        return r ? r.top + r.height / 2 < y : false
+      }).length
+      next = [...others]
+      next.splice(index, 0, current.groups.find((g) => g.section.id === current.id)!)
+    } else {
+      let target = current.groups[0]
+      let best = Infinity
+      for (const g of current.groups) {
+        const r = rectOf(sectionEls.current.get(g.section.id))
+        if (!r) continue
+        const distance = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0
+        if (distance < best) {
+          best = distance
+          target = g
+        }
       }
+      const others = target.ids.filter((id) => id !== current.id)
+      const index = others.filter((id) => {
+        const r = rectOf(rowEls.current.get(id))
+        return r ? r.top + r.height / 2 < y : false
+      }).length
+      next = current.groups.map((g) => {
+        const ids = g.ids.filter((id) => id !== current.id)
+        if (g.section.id === target.section.id) ids.splice(index, 0, current.id)
+        return { ...g, ids }
+      })
     }
-    const others = target.ids.filter((id) => id !== current.classId)
-    const index = others.filter((id) => {
-      const rect = rowEls.current.get(id)?.getBoundingClientRect()
-      return rect ? rect.top + rect.height / 2 < y : false
-    }).length
-    const next = current.sections.map((s) => {
-      const ids = s.ids.filter((id) => id !== current.classId)
-      if (s.key === target.key) ids.splice(index, 0, current.classId)
-      return { ...s, ids }
-    })
-    if (JSON.stringify(next.map((s) => s.ids)) !== JSON.stringify(current.sections.map((s) => s.ids))) {
-      setDrag({ classId: current.classId, sections: next })
-    }
+
+    if (!sameIds(next, current.groups)) setDrag({ ...current, groups: next })
     // Scroll when the finger nears the top or bottom of the screen.
     if (y < 90) window.scrollBy(0, -14)
     else if (y > window.innerHeight - 150) window.scrollBy(0, 14)
@@ -137,11 +144,14 @@ export default function ClassesScreen() {
     if (!current) return
     justDragged.current = true
     setTimeout(() => (justDragged.current = false), 50)
-    const target = current.sections.find((s) => s.ids.includes(current.classId))!
-    const ordered = current.sections.flatMap((s) => s.ids)
-    const unchanged =
-      JSON.stringify(current.sections.map((s) => s.ids)) === JSON.stringify(savedSections.map((s) => s.ids))
-    if (!unchanged) await placeClass(current.classId, target.labelId, ordered)
+    if (!sameIds(current.groups, savedGroups)) {
+      if (current.kind === 'section') {
+        await setSectionOrder(current.groups.map((g) => g.section.id))
+      } else {
+        const target = current.groups.find((g) => g.ids.includes(current.id))!
+        await placeClass(current.id, target.section.id, current.groups.flatMap((g) => g.ids))
+      }
+    }
     setDrag(null)
   }
 
@@ -163,11 +173,8 @@ export default function ClassesScreen() {
       return
     }
     const moved = Math.hypot(e.clientX - p.startX, e.clientY - p.startY)
-    if (e.pointerType === 'mouse' && moved > 6) {
-      startDrag(p.classId)
-    } else if (e.pointerType !== 'mouse' && moved > 10) {
-      endPress() // the finger is scrolling the page, not holding a class
-    }
+    if (e.pointerType === 'mouse' && moved > 6) startDrag(p.kind, p.id)
+    else if (e.pointerType !== 'mouse' && moved > 10) endPress() // scrolling, not holding
   }
 
   function onWindowUp(e: globalThis.PointerEvent) {
@@ -176,19 +183,19 @@ export default function ClassesScreen() {
     finishDrag()
   }
 
-  // Press and hold a class (or drag its grip) to move it.
-  const onRowPointerDown = (e: PointerEvent, classId: number, fromGrip = false) => {
-    if (e.button !== 0 || editingId === classId || dragRef.current) return
+  // Press and hold a class or a section title (or drag its grip) to move it.
+  const onPressStart = (e: PointerEvent, kind: 'class' | 'section', id: number, fromGrip = false) => {
+    if (e.button !== 0 || dragRef.current) return
+    if ((e.target as Element).closest('input')) return
+    if (fromGrip) e.stopPropagation()
     endPress()
     press.current = {
-      classId,
+      kind,
+      id,
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      timer:
-        e.pointerType === 'mouse'
-          ? undefined
-          : setTimeout(() => startDrag(classId), fromGrip ? 0 : HOLD_MS),
+      timer: e.pointerType === 'mouse' ? undefined : setTimeout(() => startDrag(kind, id), fromGrip ? 0 : HOLD_MS),
       move: onWindowMove,
       up: onWindowUp,
     }
@@ -199,36 +206,13 @@ export default function ClassesScreen() {
 
   // ---------- Tapping ----------
 
+  const notDragging = () => !justDragged.current && !dragRef.current
+
   const open = (c: StudyClass) => {
-    if (justDragged.current || drag) return
-    navigate(`/classes/${c.id}`)
+    if (notDragging()) navigate(`/classes/${c.id}`)
   }
 
-  // Tapping the name turns it into a text box with the name selected.
-  // flushSync keeps the focus inside the tap so the iPhone keyboard opens.
-  const startRename = (c: StudyClass) => {
-    if (justDragged.current || drag) return
-    flushSync(() => setEditingId(c.id))
-    const input = document.getElementById(`class-name-${c.id}`) as HTMLInputElement | null
-    input?.focus()
-    input?.select()
-  }
-
-  const saveRename = async (c: StudyClass, value: string) => {
-    setEditingId(null)
-    const name = value.trim()
-    if (name && name !== c.name) await renameClass(c.id, name)
-  }
-
-  const onNameKey = (e: KeyboardEvent<HTMLInputElement>, c: StudyClass) => {
-    if (e.key === 'Enter') e.currentTarget.blur()
-    if (e.key === 'Escape') {
-      e.currentTarget.value = c.name
-      e.currentTarget.blur()
-    }
-  }
-
-  const remove = async (c: StudyClass) => {
+  const removeClass = async (c: StudyClass) => {
     if (
       window.confirm(
         `Delete “${c.name}”?\n\nThis can’t be undone. Its folders, uploaded files and slides, flashcard decks and lessons will be permanently deleted.`,
@@ -238,122 +222,133 @@ export default function ClassesScreen() {
     }
   }
 
+  const removeSection = async (g: Group) => {
+    if (g.ids.length > 0) {
+      setDeletingSection(g.section)
+    } else if (window.confirm(`Delete the empty section “${g.section.name}”?\n\nThis can’t be undone.`)) {
+      await deleteSection(g.section.id, null)
+    }
+  }
+
   // ---------- Drawing ----------
+
+  const draggingSection = drag?.kind === 'section'
 
   return (
     <>
       <Header title="Classes" />
       <div className="button-row">
-        <button className="primary" onClick={() => setAdding(true)}>
+        <button className="primary" onClick={() => setAdding('class')}>
           + Add class
         </button>
-        <LearnTopicButton className="secondary" />
+        <button className="secondary" onClick={() => setAdding('section')}>
+          + Add section
+        </button>
       </div>
+      <LearnTopicButton className="secondary block spaced" />
 
-      {classes.length === 0 ? (
+      {sections.length === 0 ? (
         <p className="empty">No classes yet. Tap “+ Add class” to add your first one.</p>
       ) : (
-        <>
-          <div className="toolbar-row between">
-            <p className="hint-text tight">Tap a name to rename it. Press and hold a class to move it.</p>
-            <button className="text-action" onClick={() => setManagingLabels(true)}>
-              Manage labels
+        <p className="hint-text tight spaced-text">
+          Tap a name to rename it. Press and hold a class or a section title to move it.
+        </p>
+      )}
+
+      {groups.map((g) => (
+        <section
+          key={g.section.id}
+          className={`class-section ${drag?.kind === 'section' && drag.id === g.section.id ? 'lifted' : ''}`}
+          ref={(el) => {
+            if (el) sectionEls.current.set(g.section.id, el)
+            else sectionEls.current.delete(g.section.id)
+          }}
+        >
+          <div
+            className="section-title-row"
+            onPointerDown={(e) => onPressStart(e, 'section', g.section.id)}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <span
+              className="grip"
+              title="Drag to move this section"
+              onPointerDown={(e) => onPressStart(e, 'section', g.section.id, true)}
+            >
+              <GripIcon />
+            </span>
+            <EditableName
+              value={g.section.name}
+              what="section"
+              className="section-name"
+              canEdit={notDragging}
+              onSave={(name) => renameSection(g.section.id, name)}
+            />
+            <span className="section-count">{plural(g.ids.length, 'class', 'classes')}</span>
+            <button
+              className="icon-button trash"
+              aria-label={`Delete section ${g.section.name}`}
+              title="Delete section"
+              onClick={() => removeSection(g)}
+            >
+              <TrashIcon />
             </button>
           </div>
 
-          {sections
-            .filter((s) => s.key !== 'none' || s.ids.length > 0 || labels.length > 0)
-            .map((section) => (
-              <section
-                key={section.key}
-                className="class-section"
-                ref={(el) => {
-                  if (el) sectionEls.current.set(section.key, el)
-                  else sectionEls.current.delete(section.key)
-                }}
-              >
-                {section.title && <h2 className="section-header">{section.title}</h2>}
-                {section.ids.length === 0 ? (
-                  <div className={`drop-zone ${drag ? 'active' : ''}`}>
-                    {drag ? 'Drop here' : 'Drag a class here'}
-                  </div>
-                ) : (
-                  <ul className="list">
-                    {section.ids.map((id) => {
-                      const c = byId.get(id)
-                      if (!c) return null
-                      const editing = editingId === c.id
-                      return (
-                        <li
-                          key={c.id}
-                          ref={(el) => {
-                            if (el) rowEls.current.set(c.id, el)
-                            else rowEls.current.delete(c.id)
-                          }}
-                          className={`class-row ${drag?.classId === c.id ? 'lifted' : ''}`}
-                          onPointerDown={(e) => onRowPointerDown(e, c.id)}
-                          onContextMenu={(e) => e.preventDefault()}
-                        >
-                          <span
-                            className="grip"
-                            title="Drag to move"
-                            onPointerDown={(e) => {
-                              e.stopPropagation()
-                              onRowPointerDown(e, c.id, true)
-                            }}
-                          >
-                            <GripIcon />
-                          </span>
-                          {editing ? (
-                            <input
-                              id={`class-name-${c.id}`}
-                              className="name-input"
-                              defaultValue={c.name}
-                              aria-label="Class name"
-                              enterKeyHint="done"
-                              autoComplete="off"
-                              onBlur={(e) => saveRename(c, e.currentTarget.value)}
-                              onKeyDown={(e) => onNameKey(e, c)}
-                            />
-                          ) : (
-                            <button
-                              className="class-name"
-                              title="Tap to rename"
-                              aria-label={`Rename ${c.name}`}
-                              onClick={() => startRename(c)}
-                            >
-                              {c.name}
-                            </button>
-                          )}
-                          <button
-                            className="open-area"
-                            aria-label={`Open ${c.name}`}
-                            onClick={() => open(c)}
-                          >
-                            <span className="row-detail">{plural(counts.get(c.id) ?? 0, 'folder')}</span>
-                            <span className="chevron" aria-hidden="true">
-                              ›
-                            </span>
-                          </button>
-                          <button
-                            className="icon-button trash"
-                            aria-label={`Delete ${c.name}`}
-                            title="Delete class"
-                            onClick={() => remove(c)}
-                          >
-                            <TrashIcon />
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </section>
-            ))}
-        </>
-      )}
+          {draggingSection ? null : g.ids.length === 0 ? (
+            <div className={`drop-zone ${drag ? 'active' : ''}`}>{drag ? 'Drop here' : 'Drag a class here'}</div>
+          ) : (
+            <ul className="list">
+              {g.ids.map((id) => {
+                const c = byId.get(id)
+                if (!c) return null
+                return (
+                  <li
+                    key={c.id}
+                    ref={(el) => {
+                      if (el) rowEls.current.set(c.id, el)
+                      else rowEls.current.delete(c.id)
+                    }}
+                    className={`class-row ${drag?.kind === 'class' && drag.id === c.id ? 'lifted' : ''}`}
+                    onPointerDown={(e) => onPressStart(e, 'class', c.id)}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
+                    <span
+                      className="grip"
+                      title="Drag to move"
+                      onPointerDown={(e) => onPressStart(e, 'class', c.id, true)}
+                    >
+                      <GripIcon />
+                    </span>
+                    <EditableName
+                      value={c.name}
+                      what="class"
+                      className="class-name"
+                      canEdit={notDragging}
+                      onSave={(name) => renameClass(c.id, name)}
+                    />
+                    <button className="open-area" aria-label={`Open ${c.name}`} onClick={() => open(c)}>
+                      <span className="row-detail">{plural(counts.get(c.id) ?? 0, 'folder')}</span>
+                      <span className="chevron" aria-hidden="true">
+                        ›
+                      </span>
+                    </button>
+                    <button
+                      className="icon-button trash"
+                      aria-label={`Delete ${c.name}`}
+                      title="Delete class"
+                      onClick={() => removeClass(c)}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      ))}
 
-      {adding && (
+      {adding === 'class' && (
         <NameSheet
           title="New class"
           label="Class name"
@@ -362,10 +357,30 @@ export default function ClassesScreen() {
           onSubmit={async (name) => {
             await addClass(name)
           }}
-          onClose={() => setAdding(false)}
+          onClose={() => setAdding(null)}
         />
       )}
-      {managingLabels && <ManageLabelsSheet onClose={() => setManagingLabels(false)} />}
+      {adding === 'section' && (
+        <NameSheet
+          title="New section"
+          label="Section name"
+          placeholder="e.g. Current Courses"
+          suggestions={SECTION_SUGGESTIONS.filter((s) => !sections.some((x) => x.name === s))}
+          submitLabel="Add section"
+          onSubmit={async (name) => {
+            await addSection(name)
+          }}
+          onClose={() => setAdding(null)}
+        />
+      )}
+      {deletingSection && (
+        <DeleteSectionSheet
+          section={deletingSection}
+          classCount={classes.filter((c) => c.sectionId === deletingSection.id).length}
+          otherSections={sections.filter((s) => s.id !== deletingSection.id)}
+          onClose={() => setDeletingSection(null)}
+        />
+      )}
     </>
   )
 }
