@@ -9,7 +9,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { ConfigError, json, verifyToken } from './_lib/auth.js'
 import { prompts, type ActionName, type PromptInput } from './prompts.js'
 
-const MODEL = 'claude-sonnet-5-5'
+// Claude Haiku 5.5. It has no server-side fallback model, so a declined
+// request is reported to the user as declined.
+const MODEL = 'claude-haiku-5-5'
 
 // ---------- JSON shapes Claude must return ----------
 
@@ -133,12 +135,10 @@ export async function POST(request: Request): Promise<Response> {
     const userMessage = prompts[action].user(input)
 
     const client = new Anthropic() // reads ANTHROPIC_API_KEY
-    const message = await client.beta.messages
+    const message = await client.messages
       .stream({
         model: MODEL,
         max_tokens: 32000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
         system,
         messages: [{ role: 'user', content: userMessage }],
         output_config: { format: { type: 'json_schema', schema: schemas[action] } },
