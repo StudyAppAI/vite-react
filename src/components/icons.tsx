@@ -54,3 +54,27 @@ export function AccountIcon() {
     </svg>
   )
 }
+
+export function TrashIcon() {
+  return (
+    <svg {...common} width={20} height={20}>
+      <path d="M4 7h16" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  )
+}
+
+export function GripIcon() {
+  return (
+    <svg width={14} height={20} viewBox="0 0 14 20" aria-hidden="true" fill="currentColor">
+      {[4, 10, 16].map((y) => (
+        <g key={y}>
+          <circle cx={4} cy={y} r={1.6} />
+          <circle cx={10} cy={y} r={1.6} />
+        </g>
+      ))}
+    </svg>
+  )
+}

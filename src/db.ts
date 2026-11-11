@@ -18,24 +18,6 @@ export interface ClassLabel {
   createdAt: number
 }
 
-// A circle on the mind map. Topics are big circles; concepts are small
-// circles inside a topic. Removed nodes are kept (removed: true) so the AI
-// never adds back something the user deleted.
-export interface MindMapNode {
-  id: number
-  kind: 'topic' | 'concept'
-  label: string
-  sublabel: string // class name for a topic made from a folder
-  folderId: number | null // the folder a topic came from
-  parentId: number | null // the topic a concept sits in
-  x: number
-  y: number
-  r: number
-  removed: boolean
-  createdBy: 'user' | 'ai'
-  createdAt: number
-}
-
 export interface Folder {
   id: number
   classId: number
@@ -109,7 +91,6 @@ export const db = new Dexie('StudyAppDB') as Dexie & {
   reviewResults: EntityTable<ReviewResult, 'id'>
   lessons: EntityTable<Lesson, 'id'>
   labels: EntityTable<ClassLabel, 'id'>
-  mindMapNodes: EntityTable<MindMapNode, 'id'>
 }
 
 // Version 1 was the first release: classes, numbered weeks, and empty
@@ -182,7 +163,8 @@ db.version(4)
       })
   })
 
-// Version 5: classes get an order and a label; label and mind map tables.
+// Version 5: classes get an order and a label; label table (and a mind map
+// table, removed again in version 6).
 db.version(5)
   .stores({
     labels: '++id, order',
@@ -196,12 +178,15 @@ db.version(5)
     }
   })
 
+// Version 6: the mind map was removed, along with its saved circles.
+db.version(6).stores({ mindMapNodes: null })
+
 // ---------- Ordering ----------
 
 // Swaps a row's order with its neighbour in the given list (already sorted
 // by order). direction -1 moves it up, +1 moves it down.
 async function swapOrder(
-  tableName: 'classes' | 'folders' | 'labels',
+  tableName: 'folders' | 'labels',
   list: { id: number; order: number }[],
   id: number,
   direction: -1 | 1,
@@ -232,17 +217,14 @@ export async function addClass(name: string): Promise<number> {
   return db.classes.add({ name, order, labelId: null, createdAt: Date.now() })
 }
 
-// Moves a class up or down among the classes with the same label.
-export async function moveClass(classId: number, direction: -1 | 1): Promise<void> {
-  const all = await getClassesInOrder()
-  const current = all.find((c) => c.id === classId)
-  if (!current) return
-  const group = all.filter((c) => c.labelId === current.labelId)
-  await swapOrder('classes', group, classId, direction)
-}
-
-export async function setClassLabel(classId: number, labelId: number | null): Promise<void> {
-  await db.classes.update(classId, { labelId })
+// Saves the Classes list after the user drags a class: the moved class takes
+// the label of the section it was dropped in, and every class gets its new
+// position. orderedIds is the whole list, top to bottom.
+export async function placeClass(classId: number, labelId: number | null, orderedIds: number[]) {
+  await db.transaction('rw', db.classes, async () => {
+    await db.classes.update(classId, { labelId })
+    for (const [i, id] of orderedIds.entries()) await db.classes.update(id, { order: i + 1 })
+  })
 }
 
 // ---------- Labels ----------
@@ -440,34 +422,4 @@ export async function deleteFile(fileId: number): Promise<void> {
 
 export async function saveReviewResult(flashcardId: number, correct: boolean): Promise<void> {
   await db.reviewResults.add({ flashcardId, correct, answeredAt: Date.now() })
-}
-
-// ---------- Mind map ----------
-
-export async function getMindMapNodes(): Promise<MindMapNode[]> {
-  return db.mindMapNodes.filter((n) => !n.removed).toArray()
-}
-
-export async function addMindMapNode(
-  node: Omit<MindMapNode, 'id' | 'removed' | 'createdAt'>,
-): Promise<number> {
-  return db.mindMapNodes.add({ ...node, removed: false, createdAt: Date.now() })
-}
-
-export async function moveMindMapNodes(positions: { id: number; x: number; y: number }[]) {
-  await db.transaction('rw', db.mindMapNodes, async () => {
-    for (const p of positions) await db.mindMapNodes.update(p.id, { x: p.x, y: p.y })
-  })
-}
-
-export async function updateMindMapNode(id: number, changes: Partial<Pick<MindMapNode, 'label' | 'r'>>) {
-  await db.mindMapNodes.update(id, changes)
-}
-
-// Removing a topic removes its concepts too.
-export async function removeMindMapNode(id: number): Promise<void> {
-  await db.transaction('rw', db.mindMapNodes, async () => {
-    await db.mindMapNodes.update(id, { removed: true })
-    await db.mindMapNodes.where('parentId').equals(id).modify({ removed: true })
-  })
 }

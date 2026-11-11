@@ -18,29 +18,9 @@ export interface PromptInput {
   existingFronts: string[]
 }
 
-// Input for the mind map action.
-export interface MindMapPromptInput {
-  existing: {
-    key: string
-    kind: 'topic' | 'concept'
-    label: string
-    topicKey?: string
-    x: number
-    y: number
-    r: number
-  }[]
-  add: {
-    topicKey: string
-    topicLabel: string
-    className: string
-    isNewTopic: boolean
-    concepts: string[]
-  }[]
-}
-
-export interface PromptEntry<Input = PromptInput> {
+export interface PromptEntry {
   system: string
-  user: (input: Input) => string
+  user: (input: PromptInput) => string
 }
 
 function material({ className, folderName, text }: PromptInput): string {
@@ -121,42 +101,10 @@ Rules:
 Write the lesson for this material.`,
 }
 
-// ---------------------------------------------------------------------------
-// placeMindMapNodes: places NEW circles on the user's mind map.
-// Returns { topics: [{ key, x, y, r }], concepts: [{ topicKey, label, x, y }] }
-// Nodes already on the map are fixed; the server and the app both throw away
-// anything that is not one of the new nodes asked for.
-// ---------------------------------------------------------------------------
-const placeMindMapNodes: PromptEntry<MindMapPromptInput> = {
-  system: `You place new circles on a student's mind map, a 2D canvas.
-
-Big circles are topics. Small circles are concepts, and each concept sits inside its topic's circle.
-Coordinates are in pixels: x grows to the right, y grows downward. Concept circles have radius 40.
-
-Rules:
-- The circles already on the map are fixed. Never move, resize, rename or remove them, and do not return them.
-- Return a position only for the new topics and new concepts you are asked to add, using their exact keys and labels.
-- New topic: choose x, y and a radius r between 120 and 360, big enough to hold all of its concepts without overlapping.
-- New topic circles must not overlap any topic circle, with at least 60 pixels of space between them.
-- Put related topics near each other, for example topics from the same class.
-- Each concept goes fully inside its topic's circle: the distance from the topic's center plus 40 must be at most the topic's radius.
-- Concepts in the same topic must not overlap each other or the concepts already there.`,
-  user: ({ existing, add }) => `<circles_already_on_the_map>
-${JSON.stringify(existing)}
-</circles_already_on_the_map>
-
-<new_circles_to_place>
-${JSON.stringify(add)}
-</new_circles_to_place>
-
-Place the new circles.`,
-}
-
 export const prompts = {
   generateFlashcards,
   addMoreFlashcards,
   generateLesson,
-  placeMindMapNodes,
 }
 
 export type ActionName = keyof typeof prompts

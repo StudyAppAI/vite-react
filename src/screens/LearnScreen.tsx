@@ -10,12 +10,7 @@ export default function LearnScreen() {
   return (
     <>
       <Header title="Learn" subtitle="Interactive lessons for each week or topic." />
-      <div className="button-row">
-        <Link className="secondary" to="/mindmap">
-          Open mind map
-        </Link>
-        <LearnTopicButton className="secondary" />
-      </div>
+      <LearnTopicButton />
       {classes === undefined ? null : classes.length === 0 ? (
         <p className="empty">Add a class first, or learn a new topic.</p>
       ) : (

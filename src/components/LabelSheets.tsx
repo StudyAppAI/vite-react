@@ -8,65 +8,10 @@ import {
   getLabelsInOrder,
   moveLabel,
   renameLabel,
-  setClassLabel,
   type ClassLabel,
-  type StudyClass,
 } from '../db.ts'
 
 const LABEL_SUGGESTIONS = ['Upcoming Courses', 'Current Courses', 'Completed Courses']
-
-// Choose which label a class is under, or make a new label for it.
-export function ChangeLabelSheet({ studyClass, onClose }: { studyClass: StudyClass; onClose: () => void }) {
-  const labels = useLiveQuery(getLabelsInOrder)
-  const [creating, setCreating] = useState(false)
-
-  const choose = async (labelId: number | null) => {
-    await setClassLabel(studyClass.id, labelId)
-    onClose()
-  }
-
-  if (creating) {
-    return (
-      <NameSheet
-        title="New label"
-        label="Label name"
-        placeholder="e.g. Current Courses"
-        suggestions={LABEL_SUGGESTIONS}
-        submitLabel={`Create label and add “${studyClass.name}”`}
-        onSubmit={async (name) => {
-          await setClassLabel(studyClass.id, await addLabel(name))
-        }}
-        onClose={onClose}
-      />
-    )
-  }
-
-  return (
-    <Sheet title={`Label for ${studyClass.name}`} onClose={onClose}>
-      <div className="sheet-body">
-        <ul className="list">
-          {labels?.map((l) => (
-            <li key={l.id}>
-              <button className="row" onClick={() => choose(l.id)} aria-pressed={studyClass.labelId === l.id}>
-                <span className={`check ${studyClass.labelId === l.id ? 'on' : ''}`} aria-hidden="true" />
-                <span className="row-title">{l.name}</span>
-              </button>
-            </li>
-          ))}
-          <li>
-            <button className="row" onClick={() => choose(null)} aria-pressed={studyClass.labelId === null}>
-              <span className={`check ${studyClass.labelId === null ? 'on' : ''}`} aria-hidden="true" />
-              <span className="row-title">No label</span>
-            </button>
-          </li>
-        </ul>
-        <button className="secondary block" onClick={() => setCreating(true)}>
-          + Create new label
-        </button>
-      </div>
-    </Sheet>
-  )
-}
 
 // Add, rename, reorder and delete labels.
 export function ManageLabelsSheet({ onClose }: { onClose: () => void }) {
@@ -112,7 +57,10 @@ export function ManageLabelsSheet({ onClose }: { onClose: () => void }) {
     <Sheet title="Labels" onClose={onClose}>
       <div className="sheet-body sheet-scroll">
         {labels && labels.length === 0 && (
-          <p className="hint-text">Labels group your classes, for example Current Courses.</p>
+          <p className="hint-text">
+            Labels group your classes, for example Current Courses. To put a class under a label, press and
+            hold it on the Classes page and drag it into the label’s section.
+          </p>
         )}
         {labels && labels.length > 0 && (
           <ul className="list">

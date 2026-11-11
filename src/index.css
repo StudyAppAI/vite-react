@@ -1190,152 +1190,130 @@ button.row:disabled {
   line-height: 1.4;
 }
 
-/* ---------- Mind map ---------- */
+/* ---------- Classes list: rename in place, drag to move, trash ---------- */
 
-.mindmap-page .large-header {
-  margin-bottom: 12px;
+.toolbar-row.between {
+  justify-content: space-between;
+  align-items: center;
+  margin-left: 0;
 }
 
-.mindmap-toolbar {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 6px;
-}
-
-.mindmap-toolbar > button {
-  height: auto;
-  min-height: 44px;
-  padding: 4px 6px;
+.hint-text.tight {
+  margin: 0;
   font-size: 13px;
-  line-height: 1.2;
-  border-radius: 10px;
 }
 
-.mindmap-ai {
-  margin: 10px 0;
-}
-
-.mindmap-canvas {
-  position: relative;
-  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--tab-height) - 290px);
-  min-height: 300px;
-  border-radius: 16px;
-  overflow: hidden;
-  background-color: var(--card);
-  background-image: radial-gradient(var(--separator) 1px, transparent 1px);
-  background-size: 22px 22px;
-}
-
-.mindmap-canvas svg {
-  display: block;
-  touch-action: none;
-  user-select: none;
+.class-row {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding-right: 4px;
+  background: var(--card);
   -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.class-row.lifted {
+  position: relative;
+  z-index: 2;
+  transform: scale(1.02);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  border-radius: 12px;
+}
+
+.grip {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 12px;
+  color: var(--separator);
+  touch-action: none;
   cursor: grab;
 }
 
-.mindmap-empty {
-  position: absolute;
-  inset: auto 16px 16px;
-  text-align: center;
-  color: var(--secondary);
-  font-size: 15px;
-  pointer-events: none;
-}
-
-.mm-topic circle {
-  stroke-width: 3;
-}
-
-.mm-topic.topic-a circle { fill: #e8e7fd; stroke: #4f46e5; }
-.mm-topic.topic-b circle { fill: #dff7f3; stroke: #0d9488; }
-.mm-topic.topic-c circle { fill: #fff1d6; stroke: #d97706; }
-.mm-topic.topic-d circle { fill: #fde4ec; stroke: #db2777; }
-.mm-topic.topic-e circle { fill: #e2efff; stroke: #2563eb; }
-.mm-topic.topic-f circle { fill: #ecf6dc; stroke: #65a30d; }
-
-@media (prefers-color-scheme: dark) {
-  .mm-topic.topic-a circle { fill: #26244d; }
-  .mm-topic.topic-b circle { fill: #11302c; }
-  .mm-topic.topic-c circle { fill: #3a2a10; }
-  .mm-topic.topic-d circle { fill: #3a1625; }
-  .mm-topic.topic-e circle { fill: #14284a; }
-  .mm-topic.topic-f circle { fill: #233212; }
-}
-
-.mm-topic.selected circle,
-.mm-concept.selected circle {
-  stroke-width: 6;
-  stroke-dasharray: 10 6;
-}
-
-.mm-topic-label {
-  text-anchor: middle;
-  font-size: 20px;
-  font-weight: 700;
-  fill: var(--text);
-}
-
-.mm-topic-sublabel {
-  text-anchor: middle;
-  font-size: 14px;
-  fill: var(--secondary);
-}
-
-.mm-concept circle {
-  fill: var(--card);
-  stroke: var(--secondary);
-  stroke-width: 2;
-}
-
-.mm-concept.selected circle {
-  stroke: var(--accent);
-}
-
-.mm-concept-label {
-  text-anchor: middle;
-  font-size: 12px;
-  font-weight: 500;
-  fill: var(--text);
-}
-
-.mindmap-selection {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(env(safe-area-inset-bottom) + var(--tab-height));
-  z-index: 15;
-  padding: 12px calc(env(safe-area-inset-right) + 16px) 12px calc(env(safe-area-inset-left) + 16px);
-  background: var(--tab-bar);
-  border-top: 0.5px solid var(--separator);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-}
-
-.selection-title {
-  font-size: 15px;
-  margin-bottom: 8px;
+.class-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 6px;
+  font-weight: 600;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-radius: 8px;
 }
 
-.selection-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.selection-actions button {
-  flex: 1 1 30%;
-  min-height: 38px;
-  border-radius: 9px;
+.class-name:active {
   background: var(--fill);
-  color: var(--accent);
-  font-size: 14px;
-  font-weight: 500;
 }
 
-.selection-actions .danger-text {
+.name-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  margin: 0 4px;
+  padding: 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: var(--fill);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.open-area {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 4px 0 8px;
+  min-width: 44px;
+}
+
+.open-area:active {
+  opacity: 0.6;
+}
+
+.icon-button {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button.trash {
   color: var(--danger);
+}
+
+.icon-button.trash:active {
+  background: var(--missed-soft);
+}
+
+.drop-zone {
+  border: 1.5px dashed var(--separator);
+  border-radius: 12px;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--secondary);
+  font-size: 15px;
+}
+
+.drop-zone.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
